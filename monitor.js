@@ -746,6 +746,12 @@ let respecInProgress = false;
 let _compStartSig = {};   // kind → 已做过"赛前全运气"的比赛签名
 let _compEndSig = {};     // kind → 已做过"赛后加点"的比赛签名
 
+// —— 赛后加点退避重试（最大 5 次，间隔 30s / 1min / 2min / 4min，最后失败发 webhook）——
+const COMPEND_LABEL = { guild: '公会赛', personal: '个人赛' };
+const COMP_END_MAX_RETRY = 5;         // 最大尝试次数（含首次）
+const COMP_END_BASE_MS = 30000;       // 首次后等 30s，此后每次 ×2（30s/60s/120s/240s）
+let _compEndRetry = {};               // kind → { active, attempts, timer } 进行中的退避重试任务
+
 // —— 纯函数：赛后加点方案（popup 侧也有一份副本用于预览）——
 // opts: { totalPoints, flatBonusStrength, strengthTarget, multiplier, enduranceBase, secondary }
 //   flatBonusStrength: 洗点后 stats.total.strength（base=0，即所有加成之和）
@@ -940,6 +946,53 @@ async function executeCompEnd() {
 // 周期检查比赛状态，自动触发赛前/赛后加点（复用游戏比赛状态）。
 // 公会赛（compAutoRespec 开关）与个人赛（compPersonalRespec 开关）各自独立判定、互不干扰；
 // 任一进行中都会置起 m.compActive（供自动加点切「比赛策略」）。
+
+// —— 赛后加点退避重试核心：执行一次 executeCompEnd，失败按递增间隔排下一次，最多 COMP_END_MAX_RETRY 次 ——
+async function runCompEndAttempt(kind) {
+  const t = _compEndRetry[kind];
+  if (!t || !t.active) return;
+  const attempt = t.attempts;
+  let ok = false;
+  if (respecInProgress) {
+    // 执行期间被其它重置占用：按失败计，退避后重试
+    console.warn(`[monitor] ${COMPEND_LABEL[kind]}赛后加点被占用，按失败退避重试`);
+  } else {
+    try {
+      const r = await executeCompEnd();
+      ok = !!(r && m.lastRespecResult && m.lastRespecResult.ok);
+    } catch (_e) { ok = false; }
+    if (ok) {
+      _compEndSig[kind] = _compStartSig[kind];
+      _compEndRetry[kind] = null;
+      console.log(`[monitor] ${COMPEND_LABEL[kind]}结束赛后加点完成`);
+      return;
+    }
+  }
+  t.attempts += 1;
+  if (t.attempts > COMP_END_MAX_RETRY) {
+    const res = m.lastRespecResult;
+    const reason = (res && res.reason) || 'unknown';
+    console.error(`[monitor] ${COMPEND_LABEL[kind]}结束赛后加点连续失败 ${COMP_END_MAX_RETRY} 次后放弃（末次原因 ${reason}）`);
+    const still = (m.sync && m.sync.unspentStatPoints) ? `，仍有 ${m.sync.unspentStatPoints} 点未分配` : '';
+    sendWebhook(`[Reelax] ⚠️ ${COMPEND_LABEL[kind]} 赛后加点连续失败 ${COMP_END_MAX_RETRY} 次已放弃${still}（末次原因 ${reason}）。请手动处理`);
+    _compEndRetry[kind] = null;
+    return;
+  }
+  const delay = COMP_END_BASE_MS * Math.pow(2, Math.max(0, t.attempts - 2));
+  console.log(`[monitor] ${COMPEND_LABEL[kind]}赛后加点失败（第 ${attempt} 次），${(delay / 1000) | 0}s 后重试（第 ${t.attempts} 次）`);
+  t.timer = setTimeout(() => runCompEndAttempt(kind), delay);
+}
+
+// 发起赛后加点退避重试：同一 kind 已有进行中任务则忽略（防重复）
+function fireCompEndRetry(kind) {
+  if (!_compStartSig[kind]) return;
+  if (_compEndSig[kind] === _compStartSig[kind]) return; // 已完成无需重试
+  if (_compEndRetry[kind] && _compEndRetry[kind].active) return; // 已有重试任务
+  _compEndRetry[kind] = { active: true, attempts: 1, timer: null };
+  console.log(`[monitor] ${COMPEND_LABEL[kind]}结束，开始赛后加点（第 1 次）`);
+  runCompEndAttempt(kind);
+}
+
 async function checkCompetitionRespec() {
   const guildOn = m.compAutoRespec === true;
   const personalOn = m.compPersonalRespec === true;
@@ -959,12 +1012,12 @@ async function checkCompetitionRespec() {
           await executeCompStart();
           _compStartSig.guild = guildSig;
           _compEndSig.guild = null;
+          _compEndRetry.guild = null; // 新比赛开始，重置旧退避任务
           console.log('[monitor] 公会赛开始洗点(全运气)');
         }
       } else if (m.compActive && _compStartSig.guild && (_compEndSig.guild !== _compStartSig.guild)) {
-        await executeCompEnd();
-        _compEndSig.guild = _compStartSig.guild;
-        console.log('[monitor] 公会赛结束赛后加点');
+        // 赛后加点：交给退避重试调度（30s/1min/2min/4min，最多5次，最后失败发 webhook）
+        fireCompEndRetry('guild');
       } else if (!m.compActive && !guildActive) {
         _compStartSig.guild = null;
         _compEndSig.guild = null;
@@ -983,12 +1036,12 @@ async function checkCompetitionRespec() {
           await executeCompStart();
           _compStartSig.personal = personalSig;
           _compEndSig.personal = null;
+          _compEndRetry.personal = null; // 新比赛开始，重置旧退避任务
           console.log('[monitor] 个人赛开始洗点(全运气)');
         }
       } else if (m.compPersonalActive && _compStartSig.personal && (_compEndSig.personal !== _compStartSig.personal)) {
-        await executeCompEnd();
-        _compEndSig.personal = _compStartSig.personal;
-        console.log('[monitor] 个人赛结束赛后加点');
+        // 赛后加点：交给退避重试调度（30s/1min/2min/4min，最多5次，最后失败发 webhook）
+        fireCompEndRetry('personal');
       } else if (!m.compPersonalActive && !personalActive) {
         _compStartSig.personal = null;
         _compEndSig.personal = null;
