@@ -1,0 +1,794 @@
+[
+  {
+    "path": "/api/admin/",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/me",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/users",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/players",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/dashboard",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/stats",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/statistics",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/config",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/settings",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/login",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/auth",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/auth/login",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin/auth/me",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/register",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/password",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/reset",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/players/{id}",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/users/{id}",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/guilds",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/guilds/{id}",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/market",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/orders",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/fish",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/gear",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/inventory",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/items",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/chests",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/events",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/logs",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/audit",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/system",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/health",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/version",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/status",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/db",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/database",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/backup",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/export",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/import",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/migrations",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/roles",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/permissions",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/roles/{id}",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/bans",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/reports",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/tickets",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/notifications",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/broadcast",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/announcements",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/currency",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/economy",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/balance",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/grant",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/give",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/redeem",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/cdk",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/codes",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/promotions",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/sponsors",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/afdian",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/webhooks",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/integrations",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/secrets",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/keys",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/tokens",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/sessions",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/ip",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/security",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/2fa",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/otp",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/totp",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/debug",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/test",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/echo",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/healthcheck",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/ping",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/console",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/exec",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/command",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/shell",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/terminal",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/ssh",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/file",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/files",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/upload",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/download",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/static",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/assets",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/theme",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/customization",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/feature",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/features",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/flag",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/flags",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/env",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/environment",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/config.json",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/.env",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/package.json",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  }
+]

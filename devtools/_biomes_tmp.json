@@ -1,0 +1,472 @@
+﻿馃攲 绔彛 55004 宸茶鍗犵敤锛岄檷绾т负瀹㈡埛绔ā寮忥紙杩炴帴鐜版湁鏈嶅姟绔級
+{
+  "biomes": [
+    {
+      "id": "b_001",
+      "name": "鏈堣惤婧胺",
+      "requiredLevel": 0,
+      "unlockCost": 0,
+      "valueMultiplier": 1,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "鏈堢櫧鍗电煶涓庡彜姘磋溅瀹堢潃涓€鏉℃竻娴呮邯娴侊紝鏄柊鎵嬭璇嗘俯鍜屾贰姘撮奔缇ょ殑璧风偣銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 23,
+        "online": 15,
+        "offline": 8
+      },
+      "masteryXpBonusBasisPoints": 1250,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_001",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_002",
+      "name": "闆捐婀垮湴",
+      "requiredLevel": 50,
+      "unlockCost": 15000,
+      "valueMultiplier": 1.05,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "鍐烽浘娌胯姦鑻囪崱缂撴參娓歌蛋锛屾偿婀俱€佹诞鍙朵笌闅愯斀姘撮亾鍏昏偛鎿呴暱浼忚棌鐨勬箍鍦伴奔缇ゃ€?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 11,
+        "online": 7,
+        "offline": 4
+      },
+      "masteryXpBonusBasisPoints": 650,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_002",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_003",
+      "name": "闀滄疆娴峰哺",
+      "requiredLevel": 100,
+      "unlockCost": 200000,
+      "valueMultiplier": 1.1,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "婢勬緢娴锋按鍦ㄧ強鐟氫笌鐧界闂寸暀涓嬮暅闈㈡疆姹狅紝楸肩兢浼氶殢娑ㄨ惤娼洿鎹㈡爾韬眰娆°€?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 32,
+        "online": 13,
+        "offline": 19
+      },
+      "masteryXpBonusBasisPoints": 850,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_003",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_004",
+      "name": "闆风棔宄℃咕",
+      "requiredLevel": 200,
+      "unlockCost": 500000,
+      "valueMultiplier": 1.15,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "鐙暱娴锋咕鍒囧叆闆锋毚宄锛屽己娴佷笌钀介浄绛涢€夊嚭鍘氶硩銆佺‖槌炲拰鍠勪簬閫嗘疆鐨勯奔缇ゃ€?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 33,
+        "online": 22,
+        "offline": 11
+      },
+      "masteryXpBonusBasisPoints": 1400,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_004",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_005",
+      "name": "鏄熸牴娲炵獰",
+      "requiredLevel": 350,
+      "unlockCost": 1000000,
+      "valueMultiplier": 1.2,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "宸ㄥ瀷鏅舵牴绌胯繃鍦颁笅鏆楁渤锛岃崸鍏夎嫈钘撶収浜け鍘绘棩鐓у悗浠嶇箒鐩涚殑娲炵┐楸肩兢銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 125,
+        "online": 57,
+        "offline": 68
+      },
+      "masteryXpBonusBasisPoints": 1600,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_005",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_006",
+      "name": "闇炴爾婀栧師",
+      "requiredLevel": 500,
+      "unlockCost": 1500000,
+      "valueMultiplier": 1.25,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "楂樺師澶ф箹琚噾鑹茶崏鐢镐笌鍊欓笩鑸嚎鐜粫锛屾樇澶滄俯宸偓鐢熺粨缇よ繙娓哥殑寮哄仴婀栭奔銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 32,
+        "online": 23,
+        "offline": 9
+      },
+      "masteryXpBonusBasisPoints": 1550,
+      "guildXpBonusBasisPoints": 5000,
+      "guildBoostEndsAt": "2026-09-28T10:03:51.022Z",
+      "weather": {
+        "biomeId": "b_006",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_007",
+      "name": "浜戞睈鎮箹",
+      "requiredLevel": 750,
+      "unlockCost": 2000000,
+      "valueMultiplier": 1.3,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "灞傚眰鎮箹婕傚湪浜戞捣涔嬮棿锛岀€戞祦閫嗛鍗囪惤锛岃交槌嶉奔缇ゆ部娴矝姘磋剦杩佸緳銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 39,
+        "online": 11,
+        "offline": 28
+      },
+      "masteryXpBonusBasisPoints": 1550,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_007",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_008",
+      "name": "璧ょ爞娑屾硥",
+      "requiredLevel": 1250,
+      "unlockCost": 3000000,
+      "valueMultiplier": 1.35,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "璧よ壊娌欐捣娣卞涓嶆柇娑屽嚭娓╂硥锛屽湴涓嬫按鑴夎繛鎺ョ豢娲诧紝鑰愮儹楸肩兢鍦ㄦ樇澶滈棿寰€杩斻€?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 84,
+        "online": 63,
+        "offline": 21
+      },
+      "masteryXpBonusBasisPoints": 1450,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_008",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_009",
+      "name": "鏋佹樇鍐版咕",
+      "requiredLevel": 2000,
+      "unlockCost": 4000000,
+      "valueMultiplier": 1.4,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "闀挎槑澶╁厜绌块€忚摑鍐颁笌娴洩锛屽喎姘撮奔缇ゅ惊鏋佸厜纾佺汗绌胯浜庡啺灞傝婀俱€?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 144,
+        "online": 92,
+        "offline": 52
+      },
+      "masteryXpBonusBasisPoints": 1700,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_009",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_010",
+      "name": "娌夐挓鍙ゆ腐",
+      "requiredLevel": 3000,
+      "unlockCost": 5000000,
+      "valueMultiplier": 1.45,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "琚疆姘存饭娌＄殑鍙ゆ腐浠嶆湁宸ㄩ挓浣庨福锛岄奔缇ゆ爾灞呭湪鎷辨ˉ銆佹矇鑸逛笌鐭冲褰㈡垚鐨勬按涓嬭宸枫€?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 170,
+        "online": 127,
+        "offline": 43
+      },
+      "masteryXpBonusBasisPoints": 1150,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_010",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_011",
+      "name": "缈＄繝娲灄",
+      "requiredLevel": 4250,
+      "unlockCost": 6500000,
+      "valueMultiplier": 1.5,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "闆ㄥ娲按婕繃缈＄繝闆ㄦ灄锛岄奔缇ゅ湪鏍戞牴杩峰涓庡崐娌℃爲鍐犱箣闂磋拷閫愭灉瀹炲拰鏆栨祦銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 141,
+        "online": 100,
+        "offline": 41
+      },
+      "masteryXpBonusBasisPoints": 1100,
+      "guildXpBonusBasisPoints": 5000,
+      "guildBoostEndsAt": "2026-09-28T09:56:12.113Z",
+      "weather": {
+        "biomeId": "b_011",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_012",
+      "name": "鐔旀疆鐜",
+      "requiredLevel": 5500,
+      "unlockCost": 8000000,
+      "valueMultiplier": 1.55,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "鐏北鐜璁╃儹娉変笌澶栨捣瀵掓祦浜ゆ眹锛岄粦娌欍€佽捀姹藉拰鐔斿厜鐝婄憵鍖呭洿鐫€鑰愮儹楸肩兢銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 129,
+        "online": 88,
+        "offline": 41
+      },
+      "masteryXpBonusBasisPoints": 700,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_012",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_013",
+      "name": "澶╃┕椴告捣",
+      "requiredLevel": 7250,
+      "unlockCost": 10000000,
+      "valueMultiplier": 1.6,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "骞块様姘村眰鎮湪澶╃┕浜戞捣涔嬩笂锛屽法鍨嬫磩娓搁奔涓庨哺缇ゅ惊鏄熼绌胯秺鏃犲哺钃濆銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 73,
+        "online": 48,
+        "offline": 25
+      },
+      "masteryXpBonusBasisPoints": 500,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_013",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_014",
+      "name": "鏃堕暅鍥炴祦",
+      "requiredLevel": 8500,
+      "unlockCost": 11500000,
+      "valueMultiplier": 1.65,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "闀滈潰姘村煙鍚屾椂鏄犲嚭鏅ㄦ槒涓庡洓瀛ｏ紝鍙よ€侀奔缇ゅ湪鍥炴祦涓繚瀛樺凡缁忔秷澶辩殑婕斿寲鍒嗘敮銆?,
+      "isUnlocked": true,
+      "isCurrent": false,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 81,
+        "online": 49,
+        "offline": 32
+      },
+      "masteryXpBonusBasisPoints": 850,
+      "guildXpBonusBasisPoints": 0,
+      "guildBoostEndsAt": null,
+      "weather": {
+        "biomeId": "b_014",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    },
+    {
+      "id": "b_015",
+      "name": "鏄熸笂鍦ｆ捣",
+      "requiredLevel": 10000,
+      "unlockCost": 13000000,
+      "valueMultiplier": 1.7,
+      "gold": [
+        50,
+        100
+      ],
+      "theme": "涓栫晫灏藉ご鐨勬繁娴锋壙鎺ュ潬钀芥槦鍏夛紝鍦ｇ幆娲嬫祦鍥寸粫鏃犲簳鏄熸笂瀛曡偛缁堟瀬楸艰幏銆?,
+      "isUnlocked": true,
+      "isCurrent": true,
+      "activeCompetitions": [],
+      "fishingCount": {
+        "total": 256,
+        "online": 220,
+        "offline": 36
+      },
+      "masteryXpBonusBasisPoints": 150,
+      "guildXpBonusBasisPoints": 5000,
+      "guildBoostEndsAt": "2026-09-28T10:30:33.539Z",
+      "weather": {
+        "biomeId": "b_015",
+        "weatherId": "arcane_surge",
+        "name": "濂ョ娑屾祦",
+        "effect": "缁忛獙 +75%锛涢珮闃堕奔涓庨仐鐗╂潈閲嶆彁楂?,
+        "startedAt": "2026-09-28T07:00:44.511Z",
+        "endsAt": "2026-09-28T12:00:44.511Z"
+      }
+    }
+  ],
+  "nextRefreshAt": "2026-09-28T09:56:12.113Z",
+  "serverTime": "2026-09-28T09:56:08.281Z"
+}

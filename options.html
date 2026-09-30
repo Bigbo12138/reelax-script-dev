@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Reelax 助手 - 设置</title>
+  <style>
+    body { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; }
+    fieldset { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+    legend { font-weight: 600; padding: 0 6px; }
+    label { display: block; margin: 10px 0; }
+    input[type="text"], input[type="number"] { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
+    textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+    .script-item { margin: 6px 0; }
+    button { background: #ff8c1a; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
+    button:hover { background: #f57c00; }
+    #status { margin-left: 12px; color: #2e7d32; }
+    .hint { color: #666; font-size: 13px; line-height: 1.6; }
+    code { background: #f3f3f3; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>🍊 Reelax 助手 设置</h1>
+
+  <label>
+    目标网站 URL：
+    <input type="text" id="targetUrl" size="48" placeholder="https://reelax.cn/" />
+  </label>
+
+  <label>
+    <input type="checkbox" id="autoOpen" />
+    浏览器启动时自动打开目标网站
+  </label>
+
+  <fieldset>
+    <legend>核心脚本（始终注入，无需勾选）</legend>
+    <p class="hint">
+      <code>自动登录.js</code> —— 检测登录表单，自动填账号密码并登录<br />
+      <code>聚合.js</code> —— 页面右下角悬浮面板（自动地图切换 / 杆数补满 / 签到等）
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>可选脚本开关（位于扩展的 <code>scripts/</code> 文件夹）</legend>
+    <p class="hint">勾选 = 注入，取消 = 不注入。强制脚本 <code>日志收集.js / 自动登录.js / 聚合.js</code> 始终生效，不可关闭。<code>自动出售库存.js</code>（页面点击版）默认关闭，改用后台 API 版出售。</p>
+    <div id="scriptList"></div>
+    <p class="hint">额外的自定义脚本文件名（每行一个，放在扩展的 <code>scripts/</code> 文件夹内）：</p>
+    <textarea id="extraScripts" rows="2" placeholder="例如：&#13;&#10;my-helper.js"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>自定义代码（直接注入到目标网站主世界）</legend>
+    <textarea id="customCode" rows="10" placeholder="// 在此粘贴任意 JS 代码，会注入到目标网站&#13;&#10;// 等效于油猴脚本（@grant none）"></textarea>
+  </fieldset>
+
+  <label>
+    自动刷新间隔（分钟，0 表示关闭）：
+    <input type="number" id="autoRefreshMin" min="0" step="1" style="width: 80px;" />
+  </label>
+
+  <fieldset>
+    <legend>Python 桥（devtools/api.py）</legend>
+    <label>
+      桥端口：
+      <input type="number" id="bridgePort" min="1024" max="65535" step="1" style="width: 90px;" />
+      <span class="hint">（默认 55004；改后需同时用 <code>--bridge-port</code> 启动 api.py/ws_bridge.py）</span>
+    </label>
+    <label>
+      登录保活探测间隔（分钟，0 关闭；默认 5）：
+      <input type="number" id="loginCheckMin" min="0" max="1440" step="1" style="width: 90px;" />
+      <span class="hint">扩展会直接请求 <code>/api/me</code> 探测登录态（不进桥队列），失效时刷新页面恢复。</span>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>扩展监控（后台统一接管掉线检测）</legend>
+    <label>
+      <input type="checkbox" id="monitorEnabled" />
+      启用在线监控（心跳 + 登录态/proof 验证 + 掉线刷新）
+    </label>
+    <label>
+      掉线阈值（分钟，无心跳超过则刷新页面；默认 2）：
+      <input type="number" id="offlineCheckMin" min="1" max="30" step="1" style="width: 70px;" />
+    </label>
+    <label>
+      登录态/proof 验证间隔（秒，默认 30）：
+      <input type="number" id="proofCheckSec" min="10" max="300" step="5" style="width: 70px;" />
+      <span class="hint">扩展直接请求 <code>/api/me</code> 验证登录态并刷新签名 proof。</span>
+    </label>
+    <label>
+      刷新冷却（秒，防掉线反复刷新；默认 60）：
+      <input type="number" id="reloadCooldownSec" min="10" max="600" step="10" style="width: 70px;" />
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>通知与自动加点（扩展统一处理）</legend>
+    <label>
+      企微 webhook URL：
+      <input type="text" id="webhookUrl" size="52" placeholder="企业微信机器人完整 webhook URL（或由 FISH_WEBHOOK 注入）" />
+      <span class="hint">留空关闭通知；页面切图/掉线刷新/加点等事件由扩展统一发送。</span>
+    </label>
+    <label>
+      <input type="checkbox" id="feishuEnabled" />
+      启用飞书应用通知（开启后用飞书 App ID/Secret 发送，企微作为回退）
+    </label>
+    <label>
+      飞书 App ID：
+      <input type="text" id="feishuAppId" size="40" placeholder="自建应用 App ID" />
+    </label>
+    <label>
+      飞书 App Secret：
+      <input type="password" id="feishuAppSecret" size="40" placeholder="自建应用 App Secret" />
+    </label>
+    <label>
+      接收人类型：
+      <select id="feishuReceiveIdType">
+        <option value="open_id">open_id</option>
+        <option value="user_id">user_id</option>
+        <option value="email">email</option>
+        <option value="chat_id">chat_id（群）</option>
+        <option value="department_id">department_id</option>
+      </select>
+    </label>
+    <label>
+      接收人标识：
+      <input type="text" id="feishuReceiveId" size="52" placeholder="如 open_id / user_id / 群 chat_id" />
+      <span class="hint">需要把该自建应用拉进群（chat_id）或拿到接收人的 open_id/user_id。应用需具备 im:message 发消息权限。</span>
+    </label>
+    <button type="button" id="testNotify">发送测试通知</button>
+    <span id="notifyResult" class="hint"></span>
+    <label>
+      <input type="checkbox" id="dailyReportWebhook" />
+      挂机日报 webhook（到指定北京时间推送日报摘要到上面通知通道）
+    </label>
+    <label>
+      日报推送时间（北京时间，24h，多个用逗号分隔）：
+      <input type="text" id="dailyReportTimes" size="24" placeholder="如 09:30,18:30" />
+      <span class="hint">留空则不推送；需先启用上方开关，且本地桥（55004）需在线以拉取日报内容。</span>
+    </label>
+    <label>
+      <input type="checkbox" id="autoAllocate" />
+      自动加点（检测到待分配属性点自动分配）
+    </label>
+    <label>
+      <input type="checkbox" id="autoMastery" />
+      自动加专精（每 10 分钟把当前地图专精点全部投入）
+    </label>
+    <label>
+      加点目标属性：
+      <select id="statTarget">
+        <option value="luck" selected>运气</option>
+        <option value="intelligence">智力</option>
+        <option value="strength">力量</option>
+        <option value="endurance">耐力</option>
+      </select>
+      <span class="hint">主属性（未达阈值前，待分配点全加主属性）</span>
+    </label>
+    <label>
+      主属性总计阈值（达该值后，剩余点分给副属性；0=不启用，全加主属性）：
+      <input type="number" id="primaryTotalTarget" min="0" step="100" style="width: 100px;" />
+    </label>
+    <label>
+      副属性（主属性达阈值后，剩余点数投入的属性）：
+      <select id="allocSecondary">
+        <option value="luck" selected>运气</option>
+        <option value="intelligence">智力</option>
+        <option value="strength">力量</option>
+        <option value="endurance">耐力</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>保底监控（奥秘/奇异鱼出货通知）</legend>
+    <label>
+      <input type="checkbox" id="pityMonitor" />
+      启用保底监控（定期查保底计数；出货 / 保底已满 / 逼近硬保底时 webhook 通知）
+    </label>
+    <label>
+      检查间隔（秒，最小 60；默认 600）：
+      <input type="number" id="pityCheckSec" min="60" max="3600" step="30" style="width: 80px;" />
+      <span class="hint">每 <code>/api/statistics</code> 一次签名只读请求，注意会话频率预算。</span>
+    </label>
+    <label>
+      距硬保底 ≤ 多少杆时预警（默认 1000，约 1.7 小时）：
+      <input type="number" id="pityHardMargin" min="0" max="10000" step="100" style="width: 90px;" />
+    </label>
+    <label>
+      <input type="checkbox" id="pityTriggerArcane" />
+      保底触发·奥秘（仅记录「奥秘涌流·全运气」硬保底基准；非全运气时杆数达基准就洗点全加运气，直到奥秘出货再洗回）
+    </label>
+    <label>
+      <input type="checkbox" id="pityTriggerExotic" />
+      保底触发·奇异（仅记录「奥秘涌流·全运气」硬保底基准；非全运气时杆数达基准就洗点全加运气，直到奇异出货再洗回）
+    </label>
+    <label>
+      <input type="checkbox" id="pityTriggerSurgeOnly" />
+      保底触发·仅奥秘涌流期间触发（开启后仅在奥秘涌流生效时触发；涌流结束自动洗回）
+    </label>
+    <label>
+      <input type="checkbox" id="pityTriggerTopBait" />
+      保底触发·自动用顶级饵（洗点期间自动换顶级饵；库存为0自动买100个，买不起则用当前设定饵；功能关闭/洗回时恢复开启前的饵）
+    </label>
+    <p class="hint">
+      两个开关可并列开启：任一在等就保持全运气，最后那个出货后才洗回（复用比赛后加点方案）。此功能 active 期间会暂停自动加点，避免点加到别的属性。勾选「仅奥秘涌流期间触发」则叠加一层限制：只在奥秘涌流(surge)期间跑。
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>装备自动出售（API 版，可选品级，卖出后通知）</legend>
+    <label>
+      <input type="checkbox" id="gearAutoSell" />
+      启用装备自动出售（通过 <code>/api/inventory/gear/sell</code> 接口卖出，无需切页面）
+    </label>
+    <label>
+      出售的装备品级（勾选的才会卖；已装备 / 已锁定 / 挂单中的始终保留）：
+    </label>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; margin:4px 0 8px;">
+      <label><input type="checkbox" data-gearsell-common /> 普通</label>
+      <label><input type="checkbox" data-gearsell-uncommon /> 罕见</label>
+      <label><input type="checkbox" data-gearsell-fine /> 精良</label>
+      <label><input type="checkbox" data-gearsell-rare /> 稀有</label>
+      <label><input type="checkbox" data-gearsell-epic /> 史诗</label>
+      <label><input type="checkbox" data-gearsell-legendary /> 传说</label>
+    </div>
+    <label>
+      <input type="checkbox" id="gearSellNotify" />
+      卖出后发送 webhook 通知（飞书 / 企微）
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>市场装备监测（低价装备扫描，命中推送 webhook）</legend>
+    <label>
+      <input type="checkbox" id="gearWatchEnabled" />
+      启用市场装备监测（每 <code>间隔</code> 扫一次市场装备卖单；满足任一需求单且单价低于对应上限 → webhook 推送详情，同一条只推一次）
+    </label>
+    <div style="margin:6px 0 2px;"><b>需求单（可添加多条，各自独立监测市场价格）：</b></div>
+    <div id="gearWatchRulesContainer"></div>
+    <button type="button" id="gearWatchAddRule" style="background:#fff;color:#222;border:1px solid #ccc;border-radius:6px;padding:6px 12px;margin-bottom:8px;cursor:pointer;">＋ 添加需求单</button>
+    <div>
+      <label>
+        轮询间隔（秒，最小 60；默认 600＝10 分钟）：
+        <input type="number" id="gearWatchCheckSec" min="60" max="86400" step="60" style="width: 110px;" />
+        <span class="hint">扫描不要太频繁，10 分钟一次轮询就够。</span>
+      </label>
+    </div>
+    <label>
+      <input type="checkbox" id="gearWatchNotify" />
+      命中后发送 webhook 通知
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>鱼自动出售（API 版，只卖指定稀有度）</legend>
+    <label>
+      <input type="checkbox" id="fishAutoSell" />
+      启用鱼自动出售（通过 <code>/api/inventory/fish/sell</code> 接口卖出，无需切页面）
+    </label>
+    <label>
+      出售的鱼稀有度（勾选的才会卖；各自保留数量上限内不卖）：
+    </label>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; margin:4px 0 8px;">
+      <label><input type="checkbox" data-fishsell-common /> 普通</label>
+      <label><input type="checkbox" data-fishsell-uncommon /> 罕见</label>
+      <label><input type="checkbox" data-fishsell-fine /> 精良</label>
+      <label><input type="checkbox" data-fishsell-rare /> 稀有</label>
+      <label><input type="checkbox" data-fishsell-epic /> 史诗</label>
+    </div>
+    <label>
+      保留数量上限（每个勾选稀有度各自保留此数量，超过才卖；默认 20000）：
+      <input type="number" id="fishKeepMax" min="0" step="100" style="width: 100px;" />
+    </label>
+    <label>
+      检查间隔（秒，最小 60；默认 600）：
+      <input type="number" id="fishSellCheckSec" min="60" max="86400" step="60" style="width: 90px;" />
+      <span class="hint">每轮一次 <code>/api/inventory/fish</code> 只读请求 + 必要时一次出售请求，注意会话频率预算。</span>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>奥术献祭自动贡献（每日两轮）</legend>
+    <label>
+      <input type="checkbox" id="sacrificeAuto" />
+      启用自动贡献（每 5 分钟轮询；全服进度达阈值后才自动贡献到参与门槛）
+    </label>
+    <label>
+      全服进度阈值（%，progress/target；默认 60）：
+      <input type="number" id="sacrificeServerPct" min="0" max="100" step="5" style="width: 80px;" />
+      <span class="hint">低于该比例不自动贡献。</span>
+    </label>
+    <label>
+      遗物参与门槛（占该轮 target 的 %；默认 0.5）：
+      <input type="number" id="sacrificeRelicPct" min="0" step="0.1" style="width: 90px;" />
+    </label>
+    <label>
+      鱼分参与门槛（占该轮 target 的 %；默认 0.5）：
+      <input type="number" id="sacrificeFishPct" min="0" step="0.1" style="width: 90px;" />
+    </label>
+    <div class="line" style="margin-top: 6px;">
+      <span style="color: var(--muted, #666);">仅捐献勾选品级的鱼（多选，默认仅罕见）：</span>
+      <label style="display:inline-flex; align-items:center; gap:3px;"><input type="checkbox" data-sacrificefish-common /> 普通</label>
+      <label style="display:inline-flex; align-items:center; gap:3px;"><input type="checkbox" data-sacrificefish-uncommon /> 罕见</label>
+      <label style="display:inline-flex; align-items:center; gap:3px;"><input type="checkbox" data-sacrificefish-fine /> 精良</label>
+      <label style="display:inline-flex; align-items:center; gap:3px;"><input type="checkbox" data-sacrificefish-rare /> 稀有</label>
+      <label style="display:inline-flex; align-items:center; gap:3px;"><input type="checkbox" data-sacrificefish-epic /> 史诗</label>
+      <span class="hint">注意：不是所有品级都能献祭——只有 普通/罕见/精良/稀有/史诗 五档可被接口接受（传说/神话/奇异/奥秘 不参与鱼献祭）。</span>
+    </div>
+    <label>
+      金币参与门槛（占该轮 target 的 %；默认 0.5）：
+      <input type="number" id="sacrificeGoldPct" min="0" step="0.1" style="width: 90px;" />
+    </label>
+    <span class="hint">每轮捐献物由接口自动识别（遗物/鱼/金币）。第一轮每天 10:01 触发；第二轮在 11:30 从接口取开启时间并自动排定到点满捐。捐到「该轮目标 × 对应 %」即停。</span>
+  </fieldset>
+
+  <fieldset>
+    <legend>区域经验增益（公会增益）自动开启</legend>
+    <label>
+      <input type="checkbox" id="guildBoostAuto" />
+      由聚合格选准的「优选地图」自动开启公会区域经验增益（按目标图天气剩余折算份数，已有增益/冷却时不重复开）
+    </label>
+    <span class="hint">关闭后不会自动开任何区域经验增益。</span>
+  </fieldset>
+
+  <fieldset>
+    <legend>世界Boss自动报名</legend>
+    <label>
+      <input type="checkbox" id="worldBossAuto" />
+      启用自动报名（每 10 分钟检测世界Boss场次；自动用「最高百分比属性」报名/改选 = Boss 弱点属性 ×200%）
+    </label>
+    <span class="hint">弱点×200% / 普通×100% / 防御×50%。未报名或已选非弱点且未锁定（第一次攻击前）才自动改选；已锁定不动。</span>
+  </fieldset>
+
+  <p>
+    <button id="save">保存设置</button>
+    <span id="status"></span>
+  </p>
+
+  <p class="hint">
+    使用说明：把 JS 文件放进扩展的 <code>scripts/</code> 文件夹，然后在上方勾选或填写文件名即可注入到目标网站。
+    由于浏览器安全限制，扩展无法读取磁盘上任意路径的脚本，因此脚本需随扩展一起打包。
+  </p>
+
+  <script src="chrome-polyfill.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

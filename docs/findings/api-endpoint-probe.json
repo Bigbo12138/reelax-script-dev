@@ -1,0 +1,1626 @@
+[
+  {
+    "path": "/api/meta/frontend-release",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/content/bootstrap",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/auth/login",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/auth/register",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/auth/logout",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/integrations/afdian/webhook",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/health",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/healthz",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/status",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/version",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/robots.txt",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/.env",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/config",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/debug",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/test",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/console",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/exec",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/command",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/shell",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin/",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/auth",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/login",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/users",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/admin/players",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  },
+  {
+    "path": "/api/player",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/stats",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/player/stats/allocate",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/profile",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/profile/settings",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/account",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/account/password",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/users",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/users/me",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/me",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/session",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/sessions",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/token",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/tokens",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/key",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/keys",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/secret",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/secrets",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/flag",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/flags",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/env",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/environment",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/internal",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/internal/health",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/.git/config",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/../.env",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/..%2F.env",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/%2e%2e%2f.env",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/../../etc/passwd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/..%2f..%2fetc%2fpasswd",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/..%2F..%2F..%2Fetc%2Fpasswd",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/%2e%2e/%2e%2e/%2e%2e/etc/passwd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/static/../../etc/passwd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/public/../../etc/passwd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/admin/../../etc/passwd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/admin/..%2F..%2Fetc%2Fpasswd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/admin/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/../admin",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/../api/admin",
+    "method": "GET",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/%2e%2e/admin",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/%2e%2e/api/admin",
+    "method": "GET",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api///admin",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api//admin",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/%2f%2fadmin",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/%00admin",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/admin%00",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/admin?debug=true",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin?role=admin",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin?isAdmin=true",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin?admin=true",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin?superuser=true",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/admin?access=all",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player-profile",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player-profile/settings",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/search",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/rankings",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/members",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/boosts",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/treasury",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/settings",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/totems",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/identity",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/donations",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/activities",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/applications",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/disband",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/leave",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/transfer-leadership",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/name-style",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/me/members/{id}",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/{id}",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/{id}/members",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/{id}/tournament-history",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/{id}/trophies",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guild-tournaments",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guild-tournaments/history",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guild-tournaments/overview",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guild-tournaments/trophies",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guild-tournaments/{id}/contributions",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guild-tournaments/{id}/leaderboard",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guild-tournaments/{id}/register",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/tournaments",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/tournaments/overview",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/tournaments/register-all",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/tournaments/{id}",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/tournaments/{id}/register",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events/arcane-sacrifice",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/contributions",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/current-leaderboard",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写字段“resource”。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/leaderboard",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/rewards",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/rewards/{id}",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/rewards/{id}/participants",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events/world-boss",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events/world-boss/selection",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/leaderboards",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/leaderboards/dates",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/players",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/players/{publicId}",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/players/{id}/statistics",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishpedia",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fish-ids",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fish-prices",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/market/config",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/market/fish/overview",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/fish/events",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写鱼获。"
+  },
+  {
+    "path": "/api/market/fish/{fid}/order-book",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/orders",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/me/orders",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/market/me/trades",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/market/me",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/barter",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/barter/orders",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/barter/me/orders",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/barter/me/trades",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/fish",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/fish/settings",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/fish/sell",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/gear",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/gear/sale-preview",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/gear/sell",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/items",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/inventory/chests",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing/state",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/fishing/sync",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing/start",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/fishing/stop",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing/refill",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/fishing/custom-statistics",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing/custom-statistics/history",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing/custom-statistics/start",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/fishing/global-notifications/history",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/mastery",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/mastery/talents",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/mastery/{mapId}/contribute-all",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/baits",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/baits/auto-refill",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/weather",
+    "method": "GET",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请选择要前往的地图。"
+  },
+  {
+    "path": "/api/weather?biomeId=b_001",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/biomes",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/biomes/{id}",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/biomes/{id}/unlock",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/gear/loadouts",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear/{id}",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/gear/{id}/equip",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/gear/{id}/unequip",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear/{id}/lock",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear/{id}/reforge",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear/{id}/upgrade",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/achievements",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/achievements/claim-all",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/achievements/{id}",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/achievements/{id}/claim",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/daily",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/daily-check-in",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/daily-check-in/claim",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/daily-check-in/leaderboard",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/convenience",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/convenience/purchases",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/convenience/route-assistant/enabled",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/convenience/route-assistant/settings",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/chests",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/chests/{id}",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/chests/{id}/open",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/chests/{id}/purchase",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/sponsorship",
+    "method": "GET",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/sponsorship/me",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/sponsorship/credits",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/sponsorship/cdks/redeem-batch",
+    "method": "GET",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/history",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/statistics",
+    "method": "GET",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/admin/{path}",
+    "method": "GET",
+    "status": 401,
+    "ok": false,
+    "code": "ADMIN_AUTH_REQUIRED",
+    "message": "管理会话已失效，请重新登录。"
+  }
+]
