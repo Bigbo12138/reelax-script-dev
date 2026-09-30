@@ -12,7 +12,7 @@
 #   ./run.sh                 # 用系统默认 Firefox
 #   FIREFOX=/path/to/firefox ./run.sh
 #   NO_BRIDGE=1 ./run.sh     # 不启动 WS 桥
-#   ./run.sh --login 12212@qq.com 12345   # 用指定邮箱/密码登录（写入 FISH_EMAIL/FISH_PASSWD）
+#   ./run.sh --login you@example.com yourpass   # 用指定邮箱/密码登录（写入 FISH_EMAIL/FISH_PASSWD）
 #   FISH_EMAIL=xxx FISH_PASSWD=yyy ./run.sh   # 或直接设环境变量，自动登录.js 优先读取
 #   ./run.sh -- --devtools   # 把额外参数透传给 web-ext（例如 --devtools 打开调试器）
 #

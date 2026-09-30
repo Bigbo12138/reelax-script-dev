@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Test admin login with various credentials."""
 import json, sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -6,14 +6,14 @@ import ws_bridge
 
 ws_bridge.start(port=55004)
 
-# Test admin login with known email
+# Test admin login (脱敏演示) — 请勿对他人账号执行。
 tests = [
-    {"email": "1515151526@qq.com", "password": "123456"},
-    {"email": "1515151526@qq.com", "password": "admin123"},
-    {"email": "1515151526@qq.com", "password": "password"},
-    {"email": "1515151526@qq.com", "password": "12345678"},
-    {"email": "1515151526@qq.com", "password": "admin"},
-    {"email": "1515151526@qq.com", "password": "reelax123"},
+    {"email": "admin@REDACTED.example", "password": "123456"},
+    {"email": "admin@REDACTED.example", "password": "admin123"},
+    {"email": "admin@REDACTED.example", "password": "password"},
+    {"email": "admin@REDACTED.example", "password": "12345678"},
+    {"email": "admin@REDACTED.example", "password": "admin"},
+    {"email": "admin@REDACTED.example", "password": "reelax123"},
 ]
 
 for t in tests:

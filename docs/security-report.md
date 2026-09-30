@@ -77,7 +77,7 @@
 - ✅ `Strict-Transport-Security: max-age=31536000`
 - ✅ 角色权限分离（viewer/operator/admin）
 
-**已知管理员邮箱**: `1515151526@qq.com`（由外部情报提供）
+**已知管理员邮箱**: `admin@REDACTED.example`（由外部情报提供，已脱敏）
 
 **风险等级**: 🟠 高（入口暴露 + 源码泄露组合）
 
@@ -347,7 +347,7 @@ firefoxfish 提供的桥入口（`ws://127.0.0.1:55004`）工作正常，安全�
 
 ## 附录 B：管理员登录测试记录
 
-使用已知管理员邮箱 `1515151526@qq.com` 从 `admin.reelax.cn` 登录：
+使用已知管理员邮箱 `admin@REDACTED.example`（已脱敏）从 `admin.reelax.cn` 登录：
 
 | 测试 | 结果 |
 |------|------|
