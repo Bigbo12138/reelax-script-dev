@@ -2,6 +2,15 @@
 
 本项目变更记录。每次 Release 会同步写到此文件并打 git tag。
 
+## [v1.2.0] - 2026-09-30
+
+### 新增：CI 自动打包发布
+- 新增 GitHub Actions workflow（`.github/workflows/release.yml`）：push `v*` tag 时自动把源码打成 `reelax-script-dev-<tag>.zip` 并上传为 GitHub Release 资产，自动生成 release notes。
+- zip 排除 `.git`、`__pycache__`、`login_credentials.js`（运行期敏感凭据）、临时/数据库文件。
+
+### 说明
+- 之前 v1.1.0 的源码 zip 由 GitHub 内建 tag 归档自动生成；自此版本起由 Actions 自定义打包发布，便于控制内容、排除敏感与临时文件。
+
 ## [v1.1.0] - 2026-09-30
 
 ### 更新
