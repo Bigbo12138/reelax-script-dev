@@ -4,6 +4,8 @@ market/*.db*
 tmp
 .check_snapshot.json
 fish_snapshot.json
+# 运行期采集的游戏数据，不入库
+data/daily_raw.json
 # run.sh 依据 FISH_EMAIL / FISH_PASSWD 生成，不入库
 scripts/login_credentials.js
 stmp
