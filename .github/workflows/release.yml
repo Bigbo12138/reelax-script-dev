@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build source zip
+        shell: bash
+        run: |
+          set -e
+          PKG="reelax-script-dev-${GITHUB_REF_NAME}"
+          mkdir -p "$PKG"
+          # 拷贝源码（排除 .git / 缓存 / 运行期敏感文件）
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='scripts/login_credentials.js' \
+            --exclude='tmp' \
+            --exclude='stmp' \
+            --exclude='.check_snapshot.json' \
+            --exclude='fish_snapshot.json' \
+            --exclude='*.db' \
+            -cf - . | tar -xf - -C "$PKG"
+          zip -r "reelax-script-dev-${GITHUB_REF_NAME}.zip" "$PKG"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            reelax-script-dev-*.zip
+          generate_release_notes: true
