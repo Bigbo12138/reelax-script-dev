@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Reelax 助手</title>
+  <style>
+    body { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; width: 260px; margin: 0; padding: 14px; color: #222; }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    .url { font-size: 12px; color: #777; word-break: break-all; margin-bottom: 10px; }
+    .status { background: #f7f7f7; border: 1px solid #eee; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 12px; line-height: 1.8; }
+    .status .row { display: flex; justify-content: space-between; }
+    .status .key { color: #666; }
+    .status .ok { color: #2e7d32; font-weight: 600; }
+    .status .bad { color: #c62828; font-weight: 600; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    .tab { flex: 1; margin: 0; padding: 7px 0; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #f0f0f0; color: #555; cursor: pointer; text-align: center; }
+    .tab:hover { background: #e6e6e6; }
+    .tab.active { background: #ff8c1a; border-color: #ff8c1a; color: #fff; font-weight: 600; }
+    .panel[hidden] { display: none; }
+    .bar { height: 4px; background: #e6e6e6; border-radius: 2px; margin: 2px 0 8px; overflow: hidden; }
+    .bar-fill { display: block; height: 100%; width: 0; background: #ff8c1a; border-radius: 2px; transition: width 0.5s; }
+    button { display: block; width: 100%; margin: 8px 0; padding: 9px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
+    .primary { background: #ff8c1a; color: #fff; }
+    .primary:hover { background: #f57c00; }
+    .secondary { background: #eee; color: #333; }
+    .secondary:hover { background: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <h1>🍊 Reelax 助手</h1>
+  <div class="url" id="url">加载中…</div>
+  <div class="tabs">
+    <button type="button" class="tab active" id="tab-game">🎣 游戏</button>
+    <button type="button" class="tab" id="tab-monitor">📊 监控</button>
+  </div>
+  <div class="status panel" id="sync-status">
+    <div class="row"><span class="key">游戏状态</span><span id="sy-status">—</span></div>
+    <div class="row"><span class="key">最近一杆</span><span id="sy-last">—</span></div>
+    <div class="row"><span class="key">剩余杆数</span><span id="sy-casts">—</span></div>
+    <div class="row"><span class="key">本批次</span><span id="sy-batch">—</span></div>
+    <div class="row"><span class="key">公会税/毛收</span><span id="sy-tax">—</span></div>
+    <div class="row"><span class="key">今日净赚</span><span id="sy-daily">—</span></div>
+    <div class="row"><span class="key">今日总杆数</span><span id="sy-daily-casts">—</span></div>
+    <div class="row"><span class="key">等级/金币</span><span id="sy-player">—</span></div>
+    <div class="row" style="display: none;"><span class="key">未分配点数</span><span id="sy-unspent">—</span></div>
+    <div class="row"><span class="key">升级进度</span><span id="sy-exp">—</span></div>
+    <div class="bar"><div class="bar-fill" id="sy-exp-bar"></div></div>
+    <div class="row"><span class="key">近30杆均值</span><span id="sy-avg">—</span></div>
+    <div class="row"><span id="sy-lv1" class="ok">—</span><span id="sy-lvt1" class="ok">—</span></div>
+    <div class="row"><span id="sy-lv5" class="ok">—</span><span id="sy-lvt5" class="ok">—</span></div>
+    <div class="row"><span id="sy-lv1000" class="ok">—</span><span id="sy-lvt1000" class="ok">—</span></div>
+    <div class="row"><span class="key">组队船</span><span id="sy-boat">—</span></div>
+    <div class="row"><span class="key">在线人数</span><span id="sy-online">—</span></div>
+    <div class="row"><span class="key">奥秘保底</span><span id="py-arcane">—</span></div>
+    <div class="row"><span class="key">奇异保底</span><span id="py-exotic">—</span></div>
+    <div class="row"><span class="key">保底触发</span><span id="py-trigger">—</span></div>
+    <div class="row"><span class="key">市场监测</span><span id="gear-watch">—</span></div>
+    <div class="row"><span class="key">自动卖鱼</span><span id="sy-fish-sell">—</span></div>
+    <div class="row"><span class="key">已售出</span><span id="sy-fish-sold">—</span></div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="secondary" id="fish-sell-now" style="margin:0;flex:1;font-size:12px;padding:6px;">卖出</button>
+      <button class="secondary" id="fish-sell-refresh" style="margin:0;flex:1;font-size:12px;padding:6px;">刷新</button>
+    </div>
+  </div>
+  <div class="status panel" id="alloc-panel">
+    <div class="row"><span class="key"><label style="display:inline-flex;align-items:center;gap:4px;font-weight:normal;"><input type="checkbox" id="al-auto">公会赛加点</label></span><span id="al-comp">—</span></div>
+    <div class="row"><label style="display:inline-flex;align-items:center;gap:4px;font-weight:normal;"><input type="checkbox" id="al-personal">个人赛加点</label></div>
+    <div class="row"><span class="key">力量目标</span><input id="al-str-target" type="number" min="0" step="100" value="10500" style="width:90px"></div>
+    <div class="row"><span class="key">次要属性</span>
+      <select id="al-secondary">
+        <option value="luck">运气</option>
+        <option value="intelligence">智力</option>
+        <option value="strength">力量</option>
+        <option value="endurance">耐力</option>
+      </select>
+    </div>
+    <div class="row" style="display: none;"><span class="key">耐力预留</span><input id="al-endurance" type="number" min="0" step="10" value="0" style="width:60px"></div>    <div class="row"><span class="key">当前加成(力量)</span><span id="al-bonus">—</span></div>
+    <div class="row"><span class="key">赛后预览</span><span id="al-preview">—</span></div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="secondary" id="al-start" style="margin:0;flex:1">比赛开始</button>
+      <button class="secondary" id="al-end" style="margin:0;flex:1">赛后加点</button>
+    </div>
+    <div class="row"><span class="key">洗点结果</span><span id="al-result">—</span></div>
+  </div>
+  <div class="status panel" id="status" hidden>
+    <div class="row"><span class="key">桥连接</span><span id="st-conn">…</span></div>
+    <div class="row"><span class="key">累计任务</span><span id="st-count">…</span></div>
+    <div class="row"><span class="key">最近任务耗时</span><span id="st-ms">…</span></div>
+    <div class="row"><span class="key">最近轮询</span><span id="st-poll">…</span></div>
+    <div class="row"><span class="key">登录态</span><span id="st-login">…</span></div>
+    <div class="row"><span class="key">签名 proof</span><span id="st-proof">…</span></div>
+    <div class="row"><span class="key">在线监控</span><span id="st-mon">…</span></div>
+    <div class="row"><span class="key">心跳</span><span id="st-heart">…</span></div>
+    <div class="row"><span class="key">现失联时间</span><span id="st-idle-now">—</span></div>
+    <div class="row"><span class="key">总失联合计</span><span id="st-idle-total">—</span></div>
+    <div class="row"><span class="key">proof 更新</span><span id="st-proof-at">…</span></div>
+    <div class="row"><span class="key">掉线刷新</span><span id="st-reload">…</span></div>
+    <div class="row"><span class="key">页面刷新次数</span><span id="st-page-reload">—</span></div>
+    <div class="row"><span class="key">最近URL切换</span><span id="st-url-history">—</span></div>
+    <div class="row"><span class="key">自动加点</span><span id="st-alloc">…</span></div>
+    <div class="row"><span class="key">错误</span><span id="st-err">无</span></div>
+  </div>
+  <div class="status panel" id="sacrifice-panel">
+    <div class="row" style="justify-content:flex-start;align-items:center;gap:6px;"><span class="key" style="font-weight:700;">奥术献祭</span><span id="sf-status" class="ok">—</span></div>
+    <div class="row"><span class="key">日期</span><span id="sf-day">—</span></div>
+    <div class="row"><span class="key">本轮</span><span id="sf-round">—</span></div>
+    <div class="row"><span class="key">涌流</span><span id="sf-surge">—</span></div>
+    <div class="row"><span class="key">全服进度</span><span id="sf-server">—</span></div>
+    <div class="row"><span class="key">自动贡献</span><span id="sf-auto">—</span></div>
+    <hr style="border:none;border-top:1px dashed #ddd;margin:6px 0;">
+    <div class="row"><span class="key">遗物</span><span id="sf-relic">—</span></div>
+    <div class="row"><span class="key">鱼</span><span id="sf-fish">—</span></div>
+    <div class="row" style="font-size:10px;color:#888;"><span class="key"></span><span id="sf-fish-tip"></span></div>
+    <div class="row"><span class="key">金币</span><span id="sf-gold">—</span></div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="secondary" id="sf-btn-relic" style="margin:0;flex:1" disabled>遗物</button>
+      <button class="secondary" id="sf-btn-fish" style="margin:0;flex:1" disabled>鱼</button>
+      <button class="secondary" id="sf-btn-gold" style="margin:0;flex:1" disabled>金币</button>
+    </div>
+    <div class="row"><span class="key">贡献结果</span><span id="sf-result">—</span></div>
+    <div class="row"><span class="key">错误</span><span id="sf-err" style="word-break:break-all;">无</span></div>
+  </div>
+  <div class="status panel" id="worldboss-panel">
+    <div class="row" style="justify-content:flex-start;align-items:center;gap:6px;"><span class="key" style="font-weight:700;">世界Boss</span><span id="wb-status" class="ok">—</span></div>
+    <div class="row"><span class="key">Boss</span><span id="wb-boss">—</span></div>
+    <div class="row"><span class="key">已选属性</span><span id="wb-selected">—</span></div>
+    <div class="row"><span class="key">弱点(×200%)</span><span id="wb-target">—</span></div>
+    <div class="row"><span class="key">自动报名</span><span id="wb-auto">—</span></div>
+    <div class="row"><span class="key">错误</span><span id="wb-err" style="word-break:break-all;">无</span></div>
+  </div>
+  <div class="status panel" id="autoboost-panel">
+    <div class="row" style="justify-content:flex-start;align-items:center;gap:6px;"><span class="key" style="font-weight:700;">自动开增益</span><span id="ab-status" class="ok">—</span></div>
+    <div class="row"><span class="key">开关</span><span id="ab-switch">—</span></div>
+    <div class="row"><span class="key">当前地图</span><span id="cs-biome">—</span></div>
+    <div class="row"><span class="key">天气</span><span id="cs-weather">—</span></div>
+    <div class="row"><span class="key">公会增益</span><span id="cs-guildboost">—</span></div>
+    <div class="row"><span class="key">进行中赛事</span><span id="cs-tournament">—</span></div>
+    <hr style="border:none;border-top:1px dashed #ddd;margin:6px 0;">
+    <div class="row"><span class="key">最近操作</span><span id="ab-last">—</span></div>
+    <div class="row"><span class="key">地图</span><span id="ab-biome">—</span></div>
+    <div class="row"><span class="key">触发</span><span id="ab-trigger">—</span></div>
+    <div class="row"><span class="key">时间</span><span id="ab-at">—</span></div>
+    <hr style="border:none;border-top:1px dashed #ddd;margin:6px 0;">
+    <div class="row"><span class="key">历史(最近10条)</span></div>
+    <div id="ab-history" style="max-height:130px;overflow-y:auto;font-size:11px;line-height:1.6;word-break:break-all;"></div>
+  </div>
+  <button class="primary" id="open">打开目标网站</button>
+  <button class="secondary" id="options">扩展设置</button>
+  <script src="chrome-polyfill.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

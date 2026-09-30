@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>挂机日报 · 体检中心</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --card2:#1c2330; --line:#2d333b;
+    --txt:#e6edf3; --mut:#8b949e; --acc:#ff8c1a; --ok:#3fb950;
+    --warn:#d29922; --bad:#f85149; --cyan:#58a6ff; --purple:#bc8cff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;padding:20px;min-height:100vh}
+  .wrap{max-width:1100px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+  h1{font-size:22px;font-weight:700;letter-spacing:1px}
+  h1 .sub{font-size:12px;color:var(--mut);font-weight:400;margin-left:8px}
+  .bar{display:flex;gap:8px;align-items:center}
+  .bar a{color:var(--cyan);font-size:13px;text-decoration:none}
+  .btn{cursor:pointer;border:none;border-radius:6px;padding:7px 14px;font-size:13px;background:var(--acc);color:#1b1205;font-weight:700}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.ghost{background:var(--card2);color:var(--txt);border:1px solid var(--line)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card h2{font-size:14px;color:var(--mut);margin-bottom:12px;font-weight:600;letter-spacing:.5px}
+  .health-row{display:flex;align-items:center;gap:18px}
+  .score-wrap{position:relative;width:120px;height:120px;flex-shrink:0}
+  .score-wrap svg{transform:rotate(-90deg)}
+  .score-val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .score-val .n{font-size:34px;font-weight:800}
+  .score-val .g{font-size:12px;color:var(--mut)}
+  .grade{font-size:13px;color:var(--mut);line-height:1.7}
+  .grade b{font-size:16px}
+  .subs{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-top:14px}
+  .sub-item{font-size:12px}
+  .sub-item .lb{display:flex;justify-content:space-between;color:var(--mut);margin-bottom:3px}
+  .track{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+  .track i{display:block;height:100%;background:var(--acc)}
+  .tips{list-style:none}
+  .tips li{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px;line-height:1.6}
+  .tips li:last-child{border-bottom:none}
+  .tips .ic{font-size:16px;flex-shrink:0}
+  .tips .t{font-weight:700}
+  .euro-big{font-size:30px;font-weight:800;margin:4px 0}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600}
+  .mut{color:var(--mut)}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--card2);border:1px solid var(--line);margin-left:6px;color:var(--mut)}
+  .empty{color:var(--mut);font-size:13px;padding:10px 0}
+  footer{margin-top:22px;text-align:center;color:var(--mut);font-size:12px}
+  .gen-time{font-size:12px;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🍊 挂机日报 <span class="sub">体检中心 · Reelax</span></h1>
+    <div class="bar">
+      <span class="gen-time" id="gentime"></span>
+      <button class="btn ghost" onclick="location.href='/bigscreen'">📊 市场大屏</button>
+      <button class="btn" id="regenerate" onclick="regenerate()">↻ 重新生成</button>
+    </div>
+  </header>
+  <div class="grid" id="main"><div class="empty">加载中…</div></div>
+  <footer>数据来源：扩展 monitor 采集 + fish_economy 掉落模型 · <span id="src"></span></footer>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function gradeColor(g){return {S:'#3fb950',A:'#58a6ff',B:'#d29922',C:'#f85149',D:'#f85149'}[g]||'#8b949e'}
+function scoreColor(s){return s>=75?'#3fb950':s>=60?'#d29922':s>=40?'#f85149':'#f85149'}
+
+function healthCard(h){
+  const total=h.total, grade=h.healthGrade, note=h.healthNote||'';
+  const color=scoreColor(total);
+  const subs=h.subscores||{};
+  const names={online:'在线率',refill:'补满及时率',switch:'切图正确率',pity:'保底健康度',offline:'掉线(越低越好)'};
+  let rows='';
+  for(const k in names){const v=subs[k];if(v==null)continue;
+    rows+='<div class="sub-item"><div class="lb"><span>'+names[k]+'</span><span>'+v+'</span></div><div class="track"><i style="width:'+v+'%;background:'+(v>=75?'var(--ok)':v>=50?'var(--warn)':'var(--bad)')+'"></i></div></div>';
+  }
+  const C=2*Math.PI*52; const off=C*(1-total/100);
+  return '<div class="card"><h2>💓 挂机体检健康分</h2><div class="health-row">'+
+    '<div class="score-wrap"><svg width="120" height="120"><circle cx="60" cy="60" r="52" fill="none" stroke="#2d333b" stroke-width="10"/>'+
+    '<circle cx="60" cy="60" r="52" fill="none" stroke="'+color+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+C.toFixed(2)+'" stroke-dashoffset="'+off.toFixed(2)+'"/></svg>'+
+    '<div class="score-val"><span class="n" style="color:'+color+'">'+total+'</span><span class="g">/ 100</span></div></div>'+
+    '<div class="grade"><b style="color:'+gradeColor(grade)+'">'+esc(grade)+'</b> 级<br>'+esc(note)+'</div></div>'+
+    '<div class="subs">'+rows+'</div></div>';
+}
+
+function euroCard(e){
+  if(!e||e.index==null) return '<div class="card"><h2>🍀 欧非指数</h2><div class="empty">'+esc(e?.note||'暂无数据')+'</div></div>';
+  const color=e.index>=1.5?'var(--ok)':e.index>=1?'var(--cyan)':e.index>=0.5?'var(--warn)':'var(--bad)';
+  return '<div class="card"><h2>🍀 欧非指数 <span class="tag">实际出货/预期</span></h2>'+
+    '<div class="euro-big" style="color:'+color+'">'+e.index+'</div>'+
+    '<div style="font-size:13px;margin-bottom:8px">'+esc(e.note)+'</div>'+
+    '<table><tr><th>实际出货(奇异+奥秘)</th><td>'+e.actual+'</td></tr>'+
+    '<tr><th>模型预期</th><td>'+e.expected+'</td></tr>'+
+    '<tr><th>单杆稀有概率</th><td>'+e.pRare+'%</td></tr></table></div>';
+}
+
+function luckCard(lp){
+  if(!lp) return '<div class="card"><h2>🎲 运气掉落概率</h2><div class="empty">无数据</div></div>';
+  let rows='';
+  for(const d of (lp.distribution||[])){
+    rows+='<tr><td>'+esc(d.name)+'</td><td>'+d.pct+'%</td></tr>';
+  }
+  return '<div class="card"><h2>🎲 运气掉落概率 <span class="tag">有效运气 '+lp.effLuck+'</span></h2>'+
+    '<div class="mut" style="font-size:12px;margin-bottom:6px">饵：'+esc(lp.baitName)+' · 天气：'+esc(lp.weatherName)+'</div>'+
+    '<table><thead><tr><th>稀有度</th><th>概率</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+function zodiacCard(z){
+  const items=(z||[]).map(t=>'<li><span class="ic">'+esc(t.icon)+'</span><div><span class="t">'+esc(t.topic)+'</span>：'+esc(t.text)+'</div></li>').join('');
+  return '<div class="card"><h2>🗓️ 钓鱼玄学日历</h2><ul class="tips">'+(items||'<li class="empty">暂无</li>')+'</ul></div>';
+}
+
+function castCard(c){
+  if(!c) return '<div class="card"><h2>🎣 今日上杆分析</h2><div class="empty">无数据</div></div>';
+  const mapName=(k)=>BIOME[k]||k;
+  function tbl(title,list){
+    if(!list||!list.length) return '';
+    let r='<div style="margin-top:10px;font-size:12px;color:var(--mut)">'+title+'（'+list.length+'）</div><table><thead><tr><th>维度</th><th>杆数</th><th>出货</th><th>出货率</th><th>金币</th></tr></thead><tbody>';
+    for(const it of list) r+='<tr><td>'+esc(mapName(it.key))+'</td><td>'+it.count+'</td><td>'+it.rare+'</td><td>'+(it.rareRate==null?'—':it.rareRate+'%')+'</td><td>'+it.gold.toLocaleString()+'</td></tr>';
+    return r+'</tbody></table>';
+  }
+  return '<div class="card"><h2>🎣 今日上杆分析 <span class="tag">共 '+c.totalCasts+' 杆</span></h2>'+
+    (c.note?'<div class="empty">'+esc(c.note)+'</div>':'')+
+    tbl('按地图',c.byMap)+tbl('按鱼饵',c.byBait)+tbl('按天气',c.byWeather)+'</div>';
+}
+
+const BIOME={b_001:'月落溪谷',b_002:'雾语湿地',b_003:'镜潮海岸',b_004:'雷痕峡湾',b_005:'星根洞窟',b_006:'霞栖湖原',b_007:'云汐悬湖',b_008:'赤砂涌泉',b_009:'极昼冰湾',b_010:'沉钟古港',b_011:'翡翠洪林',b_012:'熔潮环礁',b_013:'天穹鲸海',b_014:'时镜回流',b_015:'星渊圣海'};
+
+function weeklyCard(w){
+  if(!w || !w.topPlayers || !w.topPlayers.length) return '<div class="card"><h2>🏆 周赛分析</h2><div class="empty">暂无周赛数据</div></div>';
+  function fmt(v){ return v==null||v===undefined?'—':Number(v).toLocaleString(); }
+  var rows='';
+  for(var i=0;i<w.topPlayers.length;i++){
+    var p=w.topPlayers[i];
+    var meBg = p.isMe ? ' style="background:rgba(255,140,26,.12)"' : '';
+    var meStar = p.isMe ? '' : '';
+    var guild = p.guild ? ' <span class="mut">['+esc(p.guild)+']</span>' : '';
+    var comp = (p.competitiveness==null||p.competitiveness===undefined) ? '—' : p.competitiveness;
+    var compColor = (p.competitiveness>=80)?'var(--ok)':(p.competitiveness>=60)?'var(--cyan)':(p.competitiveness>=40)?'var(--warn)':'var(--bad)';
+    // 名次列合并显示玩家名（便于识别是谁）；只保留 名次/分·鱼/评分 三列
+    rows += '<tr'+meBg+'><td>'+meStar+p.rank+' '+esc(p.nickname)+guild+'</td><td>'+fmt(p.efficiency)+'</td><td style="color:'+compColor+';font-weight:700">'+comp+'</td></tr>';
+  }
+  var myRank = (w.myRank==null||w.myRank===undefined) ? '—' : '#'+w.myRank;
+  var insight = '';
+  if(w.analysis){
+    var a=w.analysis;
+    function c(v){ return (v==null||v===undefined)?'—':(v>=0.5?'强正相关(+'+v+')':v>=0.2?'正相关(+'+v+')':v<=-0.5?'强负相关('+v+')':v<=-0.2?'负相关('+v+')':'弱相关('+v+')'); }
+    insight = '<div class="mut" style="font-size:11px;margin-top:6px;line-height:1.7">📈 运气×分数：'+c(a.luckScoreCorr)+' · 稀有×分数：'+c(a.rareScoreCorr)+'</div>';
+  }
+  return '<div class="card"><h2>🏆 周赛分析 <span class="tag">我的排名 '+myRank+'</span></h2>'
+    +'<table><thead><tr><th>名次</th><th>分/鱼</th><th>评分</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +insight+'</div>';
+}
+
+// ---------- 实时数据卡（SSE 推送 monitor 的 daily_raw） ----------
+let _liveRaw = null;
+function fmtDur(sec){ if(sec==null) return '—'; const h=Math.floor(sec/3600), m=Math.round(sec%3600/60); return h?(h+'时'+m+'分'):(m+'分'); }
+function fmt(v){ return v==null||v===undefined?'—':Number(v).toLocaleString(); }
+// 合并实时数据：本次未推的字段(null/undefined)保留上次值，避免覆盖已显示数据
+function mergeLive(oldD, newD){
+  if(!oldD) return newD||null;
+  if(!newD) return oldD;
+  function mergeObj(o,n){ if(!o) return n||null; if(!n) return o||null; const r={}; for(const k in o) r[k]=o[k]; for(const k in n){ if(n[k]!==null&&n[k]!==undefined) r[k]=n[k]; } return r; }
+  const merged={ raw: mergeObj(oldD.raw, newD.raw), player: mergeObj(oldD.player, newD.player), updatedAt: newD.updatedAt||oldD.updatedAt };
+  return merged;
+}
+function liveCard(raw){
+  const r=(raw&&raw.raw)||{}; const p=(raw&&raw.player)||{};
+  // 完全无数据时显示等待提示，不铺一堆 —
+  const noData = (!raw || !raw.raw || (!r.activeSec && !r.totalCasts && !r.pity));
+  if(noData) return '<div class="card"><h2>🔴 实时挂机 <span class="tag">SSE推送</span></h2><div class="empty">等待扩展推送数据…</div></div>';
+  function pityHtml(k,cn){
+    const pp=(r.pity&&r.pity[k])||{};
+    const cur=pp.currentDry, hard=pp.hardPity;
+    if(cur==null||hard==null) return '<div><b>'+cn+'</b> —</div>';
+    const pct=hard>0?(cur/hard*100):0;
+    const remain=hard-cur;
+    const remainStr=remain<=0?'已到':(Math.floor(remain/10)+'时'+(remain%10?remain%10*6+'分':''));
+    const color=pct>=90?'var(--bad)':pct>=60?'var(--warn)':'var(--ok)';
+    return '<div><b>'+cn+'</b> <span style="color:'+color+';font-weight:700">'+pct.toFixed(1)+'%</span> · '+remainStr+' <span class="mut">('+cur+'/'+hard+')</span></div>';
+  }
+  const rc=r.rareCatches||{};
+  return '<div class="card"><h2>🔴 实时挂机 <span class="tag">SSE推送</span></h2>'
+    +'<div style="font-size:12px;line-height:1.8">'
+    +'🎲 有效运气 <b>'+fmt(p.luck)+'</b> · 饵 '+esc(p.bait||'—')+' · 天气 '+esc(p.weather||'—')+'<br>'
+    +pityHtml('arcane','奥秘')+pityHtml('exotic','奇异')
+    +'⏱ 在线 '+fmtDur(r.activeSec)+' · 离线 '+fmtDur(r.offlineSec)+'<br>'
+    +'🎣 '+fmt(r.totalCasts)+' 杆 · 金币 '+fmt(r.dailyNetGold)+'<br>'
+    +'🐟 出货 奇异 '+fmt(rc.exotic)+' · 奥秘 '+fmt(rc.arcane)+'</div></div>';
+}
+function renderLive(){
+  const live=document.getElementById('live-card');
+  if(!live) return;
+  live.innerHTML = liveCard(_liveRaw);
+}
+function connectSSE(){
+  if(!window.EventSource) return;
+  const es=new EventSource('/report/api/stream');
+  es.onmessage=(e)=>{
+    try{ const msg=JSON.parse(e.data);
+      if(msg.type==='daily-report' && msg.data){
+        // 合并而非覆盖：扩展这次没推的字段(null/undefined)保留上次值，避免把已显示的数据清成—
+        _liveRaw = mergeLive(_liveRaw, msg.data);
+        renderLive();
+      }
+    }catch(_){}
+  };
+  es.onerror=()=>{ /* 桥重启自动重连 */ };
+}
+
+async function load(){
+  const r=await fetch('/report/api/daily');
+  const d=await r.json();
+  document.getElementById('gentime').textContent = d.generatedAt?('生成于 '+new Date(d.generatedAt).toLocaleString()):'';
+  document.getElementById('src').textContent = '数据来源：'+(d.dataSource==='demo'?'演示数据（示例）':'真实挂机数据');
+  const main=document.getElementById('main');
+  if(d.error){ main.innerHTML='<div class="card"><h2>⚠️ 尚未生成日报</h2><div class="empty">'+esc(d.hint||d.error)+'</div></div>'; return; }
+  main.innerHTML =
+    healthCard(d.health)+
+    euroCard(d.europeIndex)+
+    luckCard(d.luckProbabilities)+
+    zodiacCard(d.zodiac)+
+    castCard(d.castAnalysis)+
+    weeklyCard(d.weeklyAnalysis);
+}
+async function regenerate(){
+  const btn=document.getElementById('regenerate'); btn.disabled=true; btn.textContent='生成中…';
+  try{
+    const r=await fetch('/report/api/trigger',{method:'POST'});
+    const d=await r.json();
+    if(!d.ok){ alert('生成失败：'+(d.msg||'')); }
+    await load();
+  }catch(e){ alert('生成失败：'+e); }
+  btn.disabled=false; btn.textContent='↻ 重新生成';
+}
+load();
+</script>
+</body>
+</html>
+

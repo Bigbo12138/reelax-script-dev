@@ -1,0 +1,255 @@
+{
+  "date": "20260926",
+  "generatedAt": "2026-09-26T17:55:00",
+  "player": {
+    "name": "",
+    "luck": 12257,
+    "strength": null,
+    "intelligence": null
+  },
+  "health": {
+    "total": 83,
+    "subscores": {
+      "online": 83,
+      "refill": 100,
+      "switch": 100,
+      "pity": 34,
+      "offline": 100
+    },
+    "weights": {
+      "online": 0.4,
+      "refill": 0.2,
+      "switch": 0.15,
+      "pity": 0.15,
+      "offline": 0.1
+    }
+  },
+  "healthGrade": "A",
+  "healthNote": "状态良好，个别环节可优化",
+  "luckProbabilities": {
+    "effLuck": 13257,
+    "bait": "supreme",
+    "baitName": "顶级饵",
+    "weather": "arcane_surge",
+    "weatherName": "奥秘涌流",
+    "distribution": [
+      {
+        "rarity": "uncommon",
+        "name": "少见",
+        "prob": 0.3156,
+        "pct": 31.556
+      },
+      {
+        "rarity": "fine",
+        "name": "优良",
+        "prob": 0.2918,
+        "pct": 29.176
+      },
+      {
+        "rarity": "rare",
+        "name": "稀有",
+        "prob": 0.22,
+        "pct": 22.002
+      },
+      {
+        "rarity": "epic",
+        "name": "史诗",
+        "prob": 0.1585,
+        "pct": 15.847
+      },
+      {
+        "rarity": "legendary",
+        "name": "传说",
+        "prob": 0.0114,
+        "pct": 1.139
+      },
+      {
+        "rarity": "mythic",
+        "name": "神话",
+        "prob": 0.0024,
+        "pct": 0.243
+      },
+      {
+        "rarity": "exotic",
+        "name": "奇异",
+        "prob": 0.0003,
+        "pct": 0.03
+      },
+      {
+        "rarity": "arcane",
+        "name": "奥秘",
+        "prob": 0.0001,
+        "pct": 0.006
+      }
+    ]
+  },
+  "europeIndex": {
+    "index": 0.794,
+    "expected": 3.78,
+    "actual": 3,
+    "pRare": 0.036,
+    "note": "正常偏非，出货低于预期"
+  },
+  "zodiac": [
+    {
+      "topic": "天气红利",
+      "icon": "🌩️",
+      "text": "当前 奥秘涌流，稀有/奥秘掉落加成大，建议全力驻留当前图。"
+    },
+    {
+      "topic": "宜钓时段",
+      "icon": "🕒",
+      "text": "玄学吉时（仅供参考）：凌晨 4-6 点、正午 12-13 点。"
+    }
+  ],
+  "castAnalysis": {
+    "totalCasts": 10375,
+    "byMap": [],
+    "byBait": [],
+    "byWeather": [],
+    "note": "暂无逐杆明细（后续版本可采集）"
+  },
+  "summary": {
+    "totalCasts": 10375,
+    "onlineSec": 64484,
+    "dailyNetGold": 7982867,
+    "refillOk": 0,
+    "switchOk": 3,
+    "rareCatches": {
+      "exotic": 2,
+      "arcane": 1
+    }
+  },
+  "dataSource": "real",
+  "weeklyAnalysis": {
+    "sequence": 7,
+    "groupPublicId": "407809e4-553d-4003-8f3d-46db3a9d2ca8",
+    "startAt": "2026-09-20T16:00:00.000Z",
+    "endAt": "2026-09-27T16:00:00.000Z",
+    "myRank": 5,
+    "myScore": 1345061,
+    "topPlayers": [
+      {
+        "rank": 1,
+        "publicId": 11484,
+        "nickname": "WYX",
+        "guild": "星河",
+        "score": 1618317,
+        "fishHit": 80817,
+        "totalFish": 4178741,
+        "totalCasts": 707409,
+        "rareHits": {
+          "legendary": 760,
+          "mythic": 161,
+          "exotic": 27,
+          "arcane": 7
+        },
+        "rareCount": 955,
+        "efficiency": 20.0,
+        "rareRate": 1.18,
+        "luck": 38387,
+        "strength": 14509,
+        "isMe": false,
+        "competitiveness": 98
+      },
+      {
+        "rank": 2,
+        "publicId": 11992,
+        "nickname": "小a",
+        "guild": "糖",
+        "score": 1468735,
+        "fishHit": 80235,
+        "totalFish": 2976743,
+        "totalCasts": 647686,
+        "rareHits": {
+          "legendary": 687,
+          "mythic": 148,
+          "exotic": 25,
+          "arcane": 6
+        },
+        "rareCount": 866,
+        "efficiency": 18.3,
+        "rareRate": 1.08,
+        "luck": 12544,
+        "strength": 1895,
+        "isMe": false,
+        "competitiveness": 88
+      },
+      {
+        "rank": 3,
+        "publicId": 11183,
+        "nickname": "荒古月",
+        "guild": "混",
+        "score": 1448396,
+        "fishHit": 80396,
+        "totalFish": 4443036,
+        "totalCasts": 742446,
+        "rareHits": {
+          "legendary": 776,
+          "mythic": 182,
+          "exotic": 25,
+          "arcane": 3
+        },
+        "rareCount": 986,
+        "efficiency": 18.0,
+        "rareRate": 1.23,
+        "luck": 7185,
+        "strength": 15179,
+        "isMe": false,
+        "competitiveness": 86
+      },
+      {
+        "rank": 4,
+        "publicId": 10932,
+        "nickname": "小虎大将军",
+        "guild": "三国",
+        "score": 1435278,
+        "fishHit": 80278,
+        "totalFish": 3235428,
+        "totalCasts": 752484,
+        "rareHits": {
+          "legendary": 785,
+          "mythic": 171,
+          "exotic": 29,
+          "arcane": 2
+        },
+        "rareCount": 987,
+        "efficiency": 17.9,
+        "rareRate": 1.23,
+        "luck": 11540,
+        "strength": 3911,
+        "isMe": false,
+        "competitiveness": 91
+      },
+      {
+        "rank": 5,
+        "publicId": 13204,
+        "nickname": "查学历发现没读",
+        "guild": "王新",
+        "score": 1345061,
+        "fishHit": 80561,
+        "totalFish": 1829697,
+        "totalCasts": 511715,
+        "rareHits": {
+          "legendary": 704,
+          "mythic": 153,
+          "exotic": 22,
+          "arcane": 4
+        },
+        "rareCount": 883,
+        "efficiency": 16.7,
+        "rareRate": 1.1,
+        "luck": 11257,
+        "strength": 1792,
+        "isMe": true,
+        "competitiveness": 84
+      }
+    ],
+    "analysis": {
+      "luckScoreCorr": 0.86,
+      "strengthScoreCorr": 0.64,
+      "rareScoreCorr": 0.29
+    }
+  },
+  "webhookText": "[Reelax] 📋 挂机日报 20260926\n健康分：83（A级 · 状态良好，个别环节可优化）\n在线：17时54分 · 掉线：0分\n上杆：10375 杆 · 净赚：7,982,867金\n补满：0/0 · 切图：3/3\n出货：奇异 2 · 奥秘 1\n欧非指数：0.794（正常偏非，出货低于预期）"
+}

@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reelax 交易大屏 🍊</title>
+<script src="/static/echarts.min.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+          --good:#3fb950; --warn:#d29922; --bad:#f85149; --fish:#58a6ff; --gear:#a371f7; --gold:#e3b341; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:16px; }
+  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:8px; }
+  header h1 { font-size:22px; }
+  .conn { font-size:13px; color:var(--muted); }
+  .conn.ok { color:var(--good); } .conn.bad { color:var(--bad); }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .kpi { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; text-align:center; }
+  .kpi .num { font-size:26px; font-weight:700; } .kpi .lbl { font-size:12px; color:var(--muted); margin-top:4px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:12px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
+  .panel h2 { font-size:15px; margin-bottom:10px; color:var(--muted); font-weight:600; }
+  .scroll { max-height:400px; overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--panel); }
+  .tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; margin-right:4px; }
+  .tag.fish { background:rgba(88,166,255,.15); color:var(--fish); }
+  .tag.gear { background:rgba(163,113,247,.15); color:var(--gear); }
+  .tag.rare { background:rgba(211,153,34,.2); color:var(--warn); }
+  .tag.epic { background:rgba(227,179,65,.2); color:var(--gold); }
+  /* 稀有度底纹（普通→奥秘） */
+  .tag-r-common { background:#e6edf3; color:#333; }
+  .tag-r-uncommon { background:rgba(63,185,80,.22); color:#7ee787; }
+  .tag-r-fine { background:rgba(88,166,255,.22); color:#79c0ff; }
+  .tag-r-rare { background:rgba(163,113,247,.25); color:#bc8cff; }
+  .tag-r-epic { background:rgba(227,82,138,.25); color:#ff7b9c; }
+  .tag-r-legendary { background:rgba(211,153,34,.28); color:#e3b341; }
+  .tag-r-mythic { background:rgba(211,47,47,.3); color:#ff6b6b; }
+  .tag-r-exotic { background:rgba(0,188,212,.28); color:#4dd0e1; }
+  .tag-r-arcane { background:rgba(106,27,154,.38); color:#ce93d8; }
+  .empty { color:var(--muted); font-size:13px; padding:12px 0; }
+  .stat-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .stat-row:last-child { border-bottom:none; }
+  .stat-row .label { color:var(--muted); } .stat-row .val { font-weight:600; }
+  .val.good{color:var(--good);} .val.warn{color:var(--warn);} .val.fish{color:var(--fish);} .val.gear{color:var(--gear);} .val.gold{color:var(--gold);}
+  .up { color:var(--good); } .down { color:var(--bad); }
+  .fish-row { cursor:pointer; } .fish-row:hover { background:rgba(88,166,255,.08); }
+  .fish-row.active { background:rgba(88,166,255,.15); }
+  .chart { width:100%; height:320px; }
+  .chart-sm { width:100%; height:260px; }
+  .sub { color:var(--muted); font-size:12px; }
+  .btn { background:var(--border); color:var(--text); border:none; border-radius:4px; padding:3px 10px; cursor:pointer; font-size:12px; }
+  .btn:hover { background:#3a4451; }
+  /* 隐藏所有滚动条但保留滚动功能 */
+  .scroll::-webkit-scrollbar, #trendFishPicker::-webkit-scrollbar { width:0; height:0; display:none; }
+  .scroll, #trendFishPicker { scrollbar-width:none; -ms-overflow-style:none; }
+  body { scrollbar-width:none; }
+  body::-webkit-scrollbar { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍊 Reelax 交易大屏</h1>
+  <div>
+    <button class="btn" onclick="loadFishPrices(true)">刷新鱼价</button>
+    <span id="conn" class="conn">连接中…</span>
+  </div>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="num" id="kFish">0</div><div class="lbl">鱼事件</div></div>
+  <div class="kpi"><div class="num" id="kGear">0</div><div class="lbl">装备事件</div></div>
+  <div class="kpi"><div class="num" id="kOrder">0</div><div class="lbl">低价挂单</div></div>
+  <div class="kpi"><div class="num" id="kFishCnt">—</div><div class="lbl">背包鱼种类</div></div>
+</div>
+
+<div class="panel" style="margin-bottom:12px">
+  <h2>🎣 背包鱼价格对比 <span class="sub">（回收价 vs 市场卖价档 vs 最新成交）— 点击行看走势</span></h2>
+  <div class="scroll" style="max-height:300px">
+    <table id="fishTable">
+      <thead><tr>
+      <th onclick="sortFish('name')" style="cursor:pointer">鱼 <span class="sort-ic" data-k="name"></span></th>
+      <th onclick="sortFish('rarity')" style="cursor:pointer">稀有度 <span class="sort-ic" data-k="rarity"></span></th>
+      <th onclick="sortFish('quantity')" style="cursor:pointer">持量 <span class="sort-ic" data-k="quantity"></span></th>
+      <th onclick="sortFish('sellPrice')" style="cursor:pointer">回收价 <span class="sort-ic" data-k="sellPrice"></span></th>
+      <th onclick="sortFish('minSell')" style="cursor:pointer">市场最低卖 <span class="sort-ic" data-k="minSell"></span></th>
+      <th onclick="sortFish('maxSell')" style="cursor:pointer">最高卖 <span class="sort-ic" data-k="maxSell"></span></th>
+      <th onclick="sortFish('latestTrade')" style="cursor:pointer">最新成交 <span class="sort-ic" data-k="latestTrade"></span></th>
+      <th onclick="sortFish('chg')" style="cursor:pointer">24h <span class="sort-ic" data-k="chg"></span></th>
+    </tr></thead>
+      <tbody id="fishBody"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>📊 鱼价对比条形图</h2>
+    <div id="chartCompare" class="chart"></div>
+  </div>
+  <div class="panel">
+    <h2>📈 价格走势 <span class="sub" id="trendTitle">未选鱼 — 显示全部有数据的鱼</span></h2>
+    <div id="trendFishPicker" style="margin-bottom:8px;max-height:80px;overflow-y:auto"></div>
+    <div id="chartTrend" class="chart-sm"><div class="empty" style="padding:40px">等待价格历史数据…</div></div>
+  </div>
+</div>
+
+<div class="grid" style="margin-top:12px">
+  <div class="panel">
+    <h2>🐟 低价鱼新挂单</h2>
+    <div class="scroll" id="fishDeals"><div class="empty">等待数据…</div></div>
+  </div>
+  <div class="panel">
+    <h2>⚙️ 低价装备新挂单</h2>
+    <div class="scroll" id="gearDeals"><div class="empty">等待数据…</div></div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:12px">
+  <h2>📡 实时事件流</h2>
+  <div class="scroll" id="stream" style="max-height:260px"><div class="empty">等待数据…</div></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let events = [];
+let fishPrices = [];
+let fishNameMap = {};   // fishId -> 名字(来自鱼价快照)
+let status = { fishEvents:0, gearEvents:0 };
+let charts = {};
+const RARITY_CN = {common:'普通',uncommon:'罕见',fine:'精良',rare:'稀有',epic:'史诗',legendary:'传说',mythic:'神话',exotic:'奇异',arcane:'奥秘'};
+function rarityTag(rarity){ const n=RARITY_CN[rarity]||rarity||'?'; return '<span class="tag tag-r-'+(rarity||'common')+'">'+n+'</span>'; }
+
+function fmtTime(ts){ const d=new Date(ts); return d.toTimeString().slice(0,8); }
+function fmtGold(n){ return n==null?'—':n.toLocaleString(); }
+
+function initCharts(){
+  if(typeof echarts==='undefined') return;
+  charts.compare = echarts.init($('chartCompare'));
+  charts.trend = echarts.init($('chartTrend'));
+}
+
+// ---- 背包鱼价格排序 ----
+let fishSortKey = null;
+let fishSortDir = 1;   // 1=升序, -1=降序
+
+// 计算排序用的派生值
+function fishSortVal(f, key){
+  const sell = f.sellLevels||[];
+  switch(key){
+    case 'name': return (f.name||f.fishId||'').toLowerCase();
+    case 'rarity': {
+      const order = {common:0,uncommon:1,fine:2,rare:3,epic:4,legendary:5,mythic:6,exotic:7,arcane:8};
+      return order[f.rarity] ?? 99;
+    }
+    case 'quantity': return f.quantity ?? -1;
+    case 'sellPrice': return f.sellPrice ?? -1;
+    case 'minSell': return sell.length ? Math.min(...sell.map(s=>s.unitPrice)) : -1;
+    case 'maxSell': return sell.length ? Math.max(...sell.map(s=>s.unitPrice)) : -1;
+    case 'latestTrade': return f.latestTradeUnitPrice ?? -1;
+    case 'chg': return f.priceChange24hBp ?? -1;
+    default: return 0;
+  }
+}
+
+function sortFish(key){
+  if(fishSortKey===key){ fishSortDir = -fishSortDir; }
+  else { fishSortKey = key; fishSortDir = 1; }
+  document.querySelectorAll('.sort-ic').forEach(ic=>{
+    ic.textContent = (ic.dataset.k===key) ? (fishSortDir>0?'▲':'▼') : '';
+  });
+  renderFishTable();
+}
+
+function renderFishTable(){
+  const body = $('fishBody');
+  if(!fishPrices.length){ body.innerHTML='<tr><td colspan="8" class="empty">无鱼价数据</td></tr>'; $('kFishCnt').textContent='0'; return; }
+  $('kFishCnt').textContent = fishPrices.length;
+  let list = fishPrices.slice();
+  if(fishSortKey){
+    list.sort((a,b)=>{
+      const va = fishSortVal(a,fishSortKey), vb = fishSortVal(b,fishSortKey);
+      if(va===vb) return 0;
+      return (va<vb?-1:1) * fishSortDir;
+    });
+  }
+  body.innerHTML = list.map(f=>{
+    const sellLevels = f.sellLevels||[];
+    const minSell = sellLevels.length?Math.min(...sellLevels.map(s=>s.unitPrice)):null;
+    const maxSell = sellLevels.length?Math.max(...sellLevels.map(s=>s.unitPrice)):null;
+    const rc = f.sellPrice;
+    const chg = f.priceChange24hBp;
+    const chgCls = chg>0?'up':chg<0?'down':'';
+    const chgTxt = chg!=null ? (chg>0?'+':'')+(chg/100).toFixed(1)+'%' : '—';
+    return '<tr class="fish-row" data-id="'+f.fishId+'" onclick="selectFish(\''+f.fishId+'\')">'+
+      '<td>'+f.name+'</td>'+
+      '<td>'+rarityTag(f.rarity)+'</td>'+
+      '<td>'+(f.quantity??'—')+'</td>'+
+      '<td class="val">'+fmtGold(rc)+'</td>'+
+      '<td class="val fish">'+fmtGold(minSell)+'</td>'+
+      '<td class="val gold">'+fmtGold(maxSell)+'</td>'+
+      '<td class="val">'+fmtGold(f.latestTradeUnitPrice)+'</td>'+
+      '<td class="val '+chgCls+'">'+chgTxt+'</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function renderCompareChart(){
+  if(!charts.compare || !fishPrices.length) return;
+  const top = fishPrices.slice(0,15);
+  charts.compare.setOption({
+    tooltip:{trigger:'axis'},
+    legend:{textStyle:{color:'#8b949e'},top:0},
+    grid:{left:50,right:20,top:30,bottom:60},
+    xAxis:{type:'value',axisLabel:{color:'#8b949e'}},
+    yAxis:{type:'category',data:top.map(f=>f.name||f.fishId),axisLabel:{color:'#8b949e'},inverse:true},
+    series:[
+      {name:'回收价',type:'bar',data:top.map(f=>f.sellPrice),itemStyle:{color:'#8b949e'}},
+      {name:'市场最低卖',type:'bar',data:top.map(f=>{const s=f.sellLevels||[];return s.length?Math.min(...s.map(x=>x.unitPrice)):null;}),itemStyle:{color:'#58a6ff'}},
+      {name:'最新成交',type:'bar',data:top.map(f=>f.latestTradeUnitPrice),itemStyle:{color:'#e3b341'}},
+    ]
+  },true);
+}
+
+function selectFish(id){
+  const f = fishPrices.find(x=>x.fishId===id);
+  if(!f) return;
+  document.querySelectorAll('.fish-row').forEach(r=>r.classList.toggle('active', r.dataset.id===id));
+  $('trendTitle').textContent = '— '+(f.name||f.fishId);
+  renderTrend(f);
+}
+
+function renderTrend(f){
+  if(!charts.trend) return;
+  $('chartTrend').innerHTML='';
+  charts.trend = echarts.init($('chartTrend'));
+  const fmtT = ts => { const d=new Date(ts); return d.toTimeString().slice(0,8); };
+  const sellLevels = f.sellLevels||[];
+  const hist = (f.history||[]).slice().reverse();
+  // 优先展示：盘口挂单量（各价格档的 quantity，买卖盘分开）
+  if(sellLevels.length || (f.buyLevels||[]).length){
+    const sells = sellLevels.slice().sort((a,b)=>a.unitPrice-b.unitPrice);
+    const buys = (f.buyLevels||[]).slice().sort((a,b)=>a.unitPrice-b.unitPrice);
+    const prices = [...new Set([...sells.map(s=>s.unitPrice), ...buys.map(b=>b.unitPrice)])].sort((a,b)=>a-b);
+    const sellData = prices.map(p=>{ const s=sells.find(x=>x.unitPrice===p); return s?s.quantity:0; });
+    const buyData = prices.map(p=>{ const b=buys.find(x=>x.unitPrice===p); return b?b.quantity:0; });
+    charts.trend.setOption({
+      tooltip:{trigger:'axis',formatter:ps=>ps.map(p=>p.seriesName+' @ ¥'+p.data[0]+'<br/>挂单量: '+p.data[1]).join('<br/>')},
+      legend:{textStyle:{color:'#8b949e'},top:0},
+      grid:{left:60,right:20,top:30,bottom:50},
+      xAxis:{type:'category',data:prices.map(p=>'¥'+p),axisLabel:{color:'#8b949e',rotate:30}},
+      yAxis:{type:'value',name:'挂单量',axisLabel:{color:'#8b949e'}},
+      series:[
+        {name:'卖出挂单',type:'bar',data:prices.map((p,i)=>[p,sellData[i]]),itemStyle:{color:'#f85149'}},
+        {name:'买入挂单',type:'bar',data:prices.map((p,i)=>[p,buyData[i]]),itemStyle:{color:'#3fb950'}},
+      ]
+    },true);
+    return;
+  }
+  // 无当前盘口但有历史：画价格走势（挂单量随时间的总量变化）
+  if(hist.length >= 2){
+    const volPts = hist.map(h=>{ const qs=Object.values(h[1]); return [h[0], qs.reduce((a,b)=>a+b,0)]; });
+    charts.trend.setOption({
+      tooltip:{trigger:'axis',formatter:p=>{const d=new Date(p[0].data[0]);return d.toTimeString().slice(0,8)+'<br/>挂单总量: '+p[0].data[1];}},
+      grid:{left:60,right:20,top:30,bottom:30},
+      xAxis:{type:'time',axisLabel:{color:'#8b949e',formatter:fmtT}},
+      yAxis:{type:'value',name:'挂单量',axisLabel:{color:'#8b949e'}},
+      series:[{name:'挂单总量',type:'line',data:volPts,smooth:true,showSymbol:false,itemStyle:{color:'#e3b341'},lineStyle:{color:'#e3b341'},areaStyle:{color:'rgba(227,179,65,.2)'}}]
+    },true);
+    return;
+  }
+  $('chartTrend').innerHTML = '<div class="empty" style="padding:40px">暂无盘口与历史数据</div>';
+  $('trendTitle').innerHTML = '— '+(f.name||f.fishId)+' <span class="sub">(无数据)</span>';
+}
+
+// 未选鱼时：展示所有有盘口数据的鱼的挂单量对比（条形图）
+function renderTrendAll(){
+  if(!charts.trend) return;
+  const withData = fishPrices.filter(f => (f.sellLevels||[]).length || (f.history||[]).length);
+  $('chartTrend').innerHTML='';
+  charts.trend = echarts.init($('chartTrend'));
+  if(!withData.length){
+    $('chartTrend').innerHTML = '<div class="empty" style="padding:40px">暂无盘口数据。正在累积…</div>';
+    $('trendFishPicker').innerHTML = '<div class="empty">等待数据…</div>';
+    $('trendTitle').textContent = '未选鱼 — 等待盘口数据累积';
+    return;
+  }
+  // 下拉选择器：全部 + 各条有数据的鱼
+  let picker = '<select id="trendSel" onchange="trendSelectChange(this.value)" style="background:var(--border);color:var(--text);border:none;border-radius:4px;padding:3px 8px;font-size:12px;max-width:100%">';
+  picker += '<option value="">-- 全部鱼（挂单量对比）--</option>';
+  withData.slice(0,50).forEach(f=>{ const n=(f.sellLevels||[]).length; picker += '<option value="'+f.fishId+'">'+(fishNameMap[f.fishId]||f.fishId)+' ('+n+'档)</option>'; });
+  picker += '</select>';
+  $('trendFishPicker').innerHTML = picker;
+  const top = withData.slice(0,20).map(f=>{
+    const sl=f.sellLevels||[];
+    const totalVol = sl.reduce((a,s)=>a+(s.quantity||0),0);
+    const minSell = sl.length?Math.min(...sl.map(s=>s.unitPrice)):null;
+    return {name:fishNameMap[f.fishId]||f.fishId, vol:totalVol, minSell};
+  }).sort((a,b)=>b.vol-a.vol);
+  charts.trend.setOption({
+    tooltip:{trigger:'axis',axisPointer:{type:'shadow'},formatter:ps=>{ const d=top[ps[0].dataIndex]; return d.name+'<br/>挂单量: '+d.vol+'<br/>最低卖价: ¥'+(d.minSell??'—'); }},
+    grid:{left:100,right:30,top:20,bottom:40},
+    xAxis:{type:'value',name:'挂单量',axisLabel:{color:'#8b949e'}},
+    yAxis:{type:'category',data:top.map(f=>f.name),axisLabel:{color:'#8b949e'},inverse:true},
+    series:[{name:'挂单量',type:'bar',data:top.map(f=>f.vol),itemStyle:{color:'#e3b341'},label:{show:true,position:'right',color:'#e6edf3',formatter:p=>top[p.dataIndex].vol}}]
+  },true);
+  $('trendTitle').textContent = '未选鱼 — 全部有盘口数据的鱼挂单量对比（'+withData.length+'条）';
+}
+
+// 下拉选择鱼时回调
+function trendSelectChange(fid){
+  if(fid){
+    const f = fishPrices.find(x=>x.fishId===fid);
+    if(f){ selectFish(fid); }
+  } else {
+    renderTrendAll();
+  }
+}
+
+// 标准化事件：把嵌套 {src,at,type,data:{src,at,ev}} 拍平，统一成 {type, src, at, ev}
+function normalizeEvent(e){
+  const d = e.data || {};
+  const ev = d.ev || d;           // 真正的事件对象
+  const src = e.src || d.src || (ev.assetType==='gear'?'gear':'fish');
+  const type = (ev.type) || e.type || '';
+  return { type, src, at: e.at||Date.now(), ev };
+}
+
+function pushEvent(e){
+  events.unshift(normalizeEvent(e));
+  if(events.length>200) events.pop();
+  renderStream();
+  renderDeals();
+  renderKpis();
+}
+
+function renderKpis(){
+  $('kFish').textContent = status.fishEvents||0;
+  $('kGear').textContent = status.gearEvents||0;
+  let orderCount=0; events.forEach(e=>{ if(e.type==='listing-created') orderCount++; });
+  $('kOrder').textContent = orderCount;
+}
+
+function evDesc(e){
+  const ev=e.ev||{};
+  if(e.type==='listing-created'){
+    if(ev.assetType==='gear'||e.src==='gear'){
+      const g=ev.gear||{};
+      const stats=g.effectiveStats?('力'+g.effectiveStats.strength+' 运'+g.effectiveStats.luck+' 智'+g.effectiveStats.intelligence):'';
+      return (g.name||ev.orderId?.slice(0,8)||'?')+' '+rarityTag(g.rarity)+' '+stats+' <b>'+fmtGold(ev.unitPrice)+'金</b>';
+    } else {
+      const fname = fishNameMap[ev.fishId] || ev.fishId || '?';
+      return fname+' <b>'+fmtGold(ev.unitPrice)+'金</b> ×'+(ev.remainingQuantity??'?');
+    }
+  }
+  if(e.type==='order-book-updated'){
+    const sl=ev.sellLevels||[], bl=ev.buyLevels||[];
+    const sellVol=sl.reduce((a,s)=>a+(s.quantity||0),0);
+    const buyVol=bl.reduce((a,s)=>a+(s.quantity||0),0);
+    const fname = fishNameMap[ev.fishId] || ev.fishId || '?';
+    return fname+' <b>卖'+sellVol+'</b>(/'+sl.length+'档) 买'+buyVol+'('+bl.length+'档) v'+(ev.version!=null?ev.version:'?');
+  }
+  return JSON.stringify(ev).slice(0,80);
+}
+
+function renderDeals(){
+  const fd = events.filter(e=>e.type==='listing-created' && e.src==='fish').slice(0,15);
+  $('fishDeals').innerHTML = fd.length ? fd.map(e=>{
+    const ev=e.ev||{}; return '<div class="stat-row"><span><span class="tag fish">鱼</span>'+evDesc(e)+'</span></div>';
+  }).join('') : '<div class="empty">暂无低价鱼挂单</div>';
+  const gd = events.filter(e=>e.type==='listing-created' && e.src==='gear').slice(0,15);
+  $('gearDeals').innerHTML = gd.length ? gd.map(e=>{
+    return '<div class="stat-row"><span><span class="tag gear">装</span>'+evDesc(e)+'</span></div>';
+  }).join('') : '<div class="empty">暂无低价装备挂单</div>';
+}
+
+function renderStream(){
+  $('stream').innerHTML = events.slice(0,40).map(e=>{
+    const t = e.type==='order-book-updated'?'盘口':e.type==='listing-created'?'低价挂单':e.type==='ready'?'就绪':e.type;
+    const c = e.src==='fish'?'fish':e.src==='gear'?'gear':'';
+    return '<div class="stat-row"><span><span class="tag '+c+'">'+t+'</span>'+fmtTime(e.at)+'</span><span class="val '+c+'">'+evDesc(e)+'</span></div>';
+  }).join('');
+}
+
+function setConn(ok){
+  const el=$('conn');
+  el.textContent = ok?'● 已连接':'● 连接断开';
+  el.className='conn '+(ok?'ok':'bad');
+}
+
+async function loadFishPrices(showMsg){
+  try{
+    const r = await fetch('/bigscreen/api/fish-prices');
+    if(!r.ok) return;
+    const j = await r.json();
+    fishPrices = j.fish||[];
+    const fhist = j.history||{};
+    fishPrices.forEach(f=>{ if(f.fishId){ fishNameMap[f.fishId]=f.name; f.history=fhist[f.fishId]||[]; } });
+    renderFishTable();
+    renderCompareChart();
+    renderTrendAll();   // 未选鱼时显示全部有数据的鱼
+    if(showMsg) console.log('鱼价已刷新:', fishPrices.length, '条');
+  }catch(e){ console.log('鱼价加载失败', e); }
+}
+
+async function loadHistory(){
+  try{
+    const r = await fetch('/bigscreen/api/history');
+    if(!r.ok) return;
+    const j = await r.json();
+    events = (j.events||[]).map(normalizeEvent);
+    status = j.status||status;
+    renderStream(); renderDeals(); renderKpis();
+  }catch(e){}
+}
+
+function connectSSE(){
+  const es = new EventSource('/bigscreen/api/stream');
+  es.onopen = ()=>{ setConn(true); loadHistory(); loadFishPrices(false); };
+  es.onmessage = (ev)=>{
+    try{ const d=JSON.parse(ev.data); if(d.type==='status'){ status=d.data; renderKpis(); } else { pushEvent(d); } }catch(_){}
+  };
+  es.onerror = ()=>{ setConn(false); };
+  setInterval(()=>loadFishPrices(false), 60000); // 每60秒刷新鱼价
+}
+
+initCharts();
+connectSSE();
+</script>
+</body>
+</html>

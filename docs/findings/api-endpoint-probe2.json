@@ -1,0 +1,1052 @@
+[
+  {
+    "path": "/api/player-profile/avatar",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player-profile/fish-showcase",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player-profile/name-style",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/player-profile/nickname",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player-profile/settings",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/player-profile/achievement-showcase",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/current-biome",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/equipped-title",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/gold-penalty/acknowledge",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/player/titles",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/player/stats",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/player/stats/reset",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/rods",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/rods/{id}",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/rods/{id}/equip",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/rods/{id}/purchase",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/rods/{id}/reset",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/rods/{id}/upgrade",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/shop",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/shop/exchanges",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/shop/exchange-quote",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写字段“target”。"
+  },
+  {
+    "path": "/api/shop/purchases",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/quests",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/quests/{periodType}/reroll",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/tournaments",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/tournaments/overview",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/tournaments/register-all",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/tournaments/archive",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/tournaments/history",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/tournaments/medals",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/weekly-tournaments/overview",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/weekly-tournaments/history",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/weekly-tournaments/medals",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/party-boats",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/overview",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/party-boats/invitations",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/party-boats/crowdfundings",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/crowdfundings/current",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/party-boats/crowdfundings/public",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/party-boats/current-biome",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/disband",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/launch",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/leave",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/name",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/rent",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/purchase",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/recycle",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/upkeep",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/party-boats/visibility",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/party-boats/treasury",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/party-boats/player-search",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写字段“q”。"
+  },
+  {
+    "path": "/api/market/me/fish-holdings",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/me/state",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/items/{id}/order-book",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/leaderboards",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/leaderboards/dates",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/fishpedia",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写地图。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/rewards",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/current-leaderboard",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写字段“resource”。"
+  },
+  {
+    "path": "/api/events/arcane-sacrifice/leaderboard",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写字段“resource”。"
+  },
+  {
+    "path": "/api/events/world-boss/collections",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/events/world-boss/history",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/events/world-boss/selection",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/events/world-boss/collections/register",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/sponsorship/me",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/sponsorship/credits",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/sponsorship/cdks/redeem-batch",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/fish/{id}/lock",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/inventory/fish/{id}/titan-values",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/items/{id}/open",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/mastery/{biomeId}/contribute-all",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/mastery/{biomeId}/requirements/{rarity}/contribute",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/mastery/talents/{id}/upgrade",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/mastery/talents/reset",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/fishing/custom-statistics/{id}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/fishing/custom-statistics/start",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/fishing/global-notifications/history",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/members",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/members/{id}",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/me/members/{id}/role",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/guilds/me/applications",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/applications/{id}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/applications/{id}/approve",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/me/applications/{id}/reject",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/guilds/me/identity",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/name-style",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/me/transfer-leadership",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/totems",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/totems/{id}/upgrade",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/guilds/me/boosts",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/boosts/{biomeId}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/donations",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/me/activities",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/guilds/me/disband",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/leave",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/guilds/me/treasury",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/search",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/rankings",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/guilds/applications/{id}",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/barter/me/orders",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/barter/me/trades",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/barter/orders/{id}",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/barter/orders/{id}/fill",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/market/orders/{id}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/orders/{id}/purchase",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/market/fish/{fid}/order-book",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/market/items/{id}/order-book",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/market/fish/events",
+    "status": 400,
+    "ok": false,
+    "code": "VALIDATION_ERROR",
+    "message": "请填写鱼获。"
+  },
+  {
+    "path": "/api/chests/{id}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/chests/{id}/open",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/chests/{id}/purchase",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/baits/{id}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/baits/{id}/equip",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/baits/{id}/purchase",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/baits/auto-refill",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/gear/{id}",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/gear/{id}/equip",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear/{id}/unequip",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/gear/{id}/lock",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/gear/{id}/reforge",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/gear/{id}/upgrade",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/gear/loadouts",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/gear/loadouts/{slot}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/gear/loadouts/{slot}/load",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/gear/sale-preview",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/gear/sell",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/fish/sell",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/fish/settings",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/inventory/items/{id}",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/inventory/items/{id}/open",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/inventory/chests",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/inventory/chests/{id}",
+    "status": 0,
+    "ok": false,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/achievements/{id}",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/achievements/{id}/claim",
+    "status": 403,
+    "ok": false,
+    "code": "REQUEST_SIGNATURE_INVALID",
+    "message": "请求签名已失效，请刷新页面后重试；用户脚本请使用内置 API，文档见“信息 → 关于游戏”。"
+  },
+  {
+    "path": "/api/achievements/claim-all",
+    "status": 429,
+    "ok": false,
+    "code": "RATE_LIMITED",
+    "message": "操作过于频繁，请稍后重试。"
+  },
+  {
+    "path": "/api/daily-check-in/claim",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/daily-check-in/leaderboard",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/convenience/purchases",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/convenience/route-assistant/enabled",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/convenience/route-assistant/settings",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/auth/login",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/auth/logout",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/auth/register",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/account",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/account/password",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  },
+  {
+    "path": "/api/me",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/content/bootstrap",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/meta/frontend-release",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/statistics",
+    "status": 200,
+    "ok": true,
+    "code": null,
+    "message": null
+  },
+  {
+    "path": "/api/history",
+    "status": 404,
+    "ok": false,
+    "code": "NOT_FOUND",
+    "message": "未找到请求的内容。"
+  }
+]

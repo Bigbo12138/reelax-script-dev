@@ -1,0 +1,189 @@
+﻿馃攲 绔彛 55004 宸茶鍗犵敤锛岄檷绾т负瀹㈡埛绔ā寮忥紙杩炴帴鐜版湁鏈嶅姟绔級
+{
+  "id": "a26bfb0e-a5eb-4c04-bd32-61cc0b124ea9",
+  "status": 200,
+  "ok": true,
+  "data": {
+    "points": {
+      "earned": 12,
+      "spent": 12,
+      "available": 0
+    },
+    "biome": {
+      "biomeId": "b_009",
+      "biomeName": "鏋佹樇鍐版咕",
+      "requiredLevel": 2000,
+      "isUnlocked": true,
+      "masteryLevel": 2,
+      "xpBonusBasisPoints": 1700,
+      "directGoldBonusBasisPoints": 1700,
+      "rarities": [
+        {
+          "rarity": "common",
+          "rarityName": "鏅€?,
+          "completedLevel": 2,
+          "targetLevel": 3,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_common_06",
+            "name": "鍐婚湶閽堥奔",
+            "imagePath": "/fish/b_009_common_06.be418fc4ab7ecb6c.webp"
+          },
+          "requiredQuantity": 3600,
+          "contributedQuantity": 0,
+          "remainingQuantity": 3600,
+          "availableQuantity": 0,
+          "isFishLocked": true,
+          "xpBonusBasisPoints": 100,
+          "directGoldBonusBasisPoints": 100
+        },
+        {
+          "rarity": "uncommon",
+          "rarityName": "缃曡",
+          "completedLevel": 3,
+          "targetLevel": 4,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_uncommon_10",
+            "name": "闆搩娴疯灪",
+            "imagePath": "/fish/b_009_uncommon_10.1d743d2ba9707d05.webp"
+          },
+          "requiredQuantity": 2592,
+          "contributedQuantity": 375,
+          "remainingQuantity": 2217,
+          "availableQuantity": 0,
+          "isFishLocked": true,
+          "xpBonusBasisPoints": 150,
+          "directGoldBonusBasisPoints": 150
+        },
+        {
+          "rarity": "fine",
+          "rarityName": "绮捐壇",
+          "completedLevel": 4,
+          "targetLevel": 5,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_fine_08",
+            "name": "鏋佸厜娴峰ぉ浣?,
+            "imagePath": "/fish/b_009_fine_08.94de9c9d2ee78296.webp"
+          },
+          "requiredQuantity": 1555,
+          "contributedQuantity": 1269,
+          "remainingQuantity": 286,
+          "availableQuantity": 0,
+          "isFishLocked": true,
+          "xpBonusBasisPoints": 200,
+          "directGoldBonusBasisPoints": 200
+        },
+        {
+          "rarity": "rare",
+          "rarityName": "绋€鏈?,
+          "completedLevel": 5,
+          "targetLevel": null,
+          "isWaiting": true,
+          "fish": null,
+          "requiredQuantity": 0,
+          "contributedQuantity": 0,
+          "remainingQuantity": 0,
+          "availableQuantity": 0,
+          "isFishLocked": false,
+          "xpBonusBasisPoints": 250,
+          "directGoldBonusBasisPoints": 250
+        },
+        {
+          "rarity": "epic",
+          "rarityName": "鍙茶瘲",
+          "completedLevel": 5,
+          "targetLevel": null,
+          "isWaiting": true,
+          "fish": null,
+          "requiredQuantity": 0,
+          "contributedQuantity": 0,
+          "remainingQuantity": 0,
+          "availableQuantity": 0,
+          "isFishLocked": false,
+          "xpBonusBasisPoints": 250,
+          "directGoldBonusBasisPoints": 250
+        },
+        {
+          "rarity": "legendary",
+          "rarityName": "浼犺",
+          "completedLevel": 3,
+          "targetLevel": 4,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_legendary_03",
+            "name": "鏋佸厜绁炵考槌?,
+            "imagePath": "/fish/b_009_legendary_03.cfab70b2cf1c00de.webp"
+          },
+          "requiredQuantity": 43,
+          "contributedQuantity": 4,
+          "remainingQuantity": 39,
+          "availableQuantity": 0,
+          "isFishLocked": true,
+          "xpBonusBasisPoints": 150,
+          "directGoldBonusBasisPoints": 150
+        },
+        {
+          "rarity": "mythic",
+          "rarityName": "绁炶瘽",
+          "completedLevel": 2,
+          "targetLevel": 3,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_mythic_04",
+            "name": "闆煶榧撹吂楸?,
+            "imagePath": "/fish/b_009_mythic_04.5e759eb0bb2ac3d0.webp"
+          },
+          "requiredQuantity": 14,
+          "contributedQuantity": 7,
+          "remainingQuantity": 7,
+          "availableQuantity": 0,
+          "isFishLocked": true,
+          "xpBonusBasisPoints": 200,
+          "directGoldBonusBasisPoints": 200
+        },
+        {
+          "rarity": "exotic",
+          "rarityName": "濂囧紓",
+          "completedLevel": 2,
+          "targetLevel": 3,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_exotic_03",
+            "name": "鎶樺厜涓冭壊槌?,
+            "imagePath": "/fish/b_009_exotic_03.0592a6bbadca417c.webp"
+          },
+          "requiredQuantity": 2,
+          "contributedQuantity": 1,
+          "remainingQuantity": 1,
+          "availableQuantity": 0,
+          "isFishLocked": true,
+          "xpBonusBasisPoints": 200,
+          "directGoldBonusBasisPoints": 200
+        },
+        {
+          "rarity": "arcane",
+          "rarityName": "濂ョ",
+          "completedLevel": 2,
+          "targetLevel": 3,
+          "isWaiting": false,
+          "fish": {
+            "id": "b_009_arcane_01",
+            "name": "鏋佸啝瀹氭槦榫欓硶",
+            "imagePath": "/fish/b_009_arcane_01.342c27dbedcb2b7d.webp"
+          },
+          "requiredQuantity": 1,
+          "contributedQuantity": 0,
+          "remainingQuantity": 1,
+          "availableQuantity": 0,
+          "isFishLocked": false,
+          "xpBonusBasisPoints": 200,
+          "directGoldBonusBasisPoints": 200
+        }
+      ]
+    },
+    "serverTime": "2026-09-28T09:56:11.935Z"
+  },
+  "raw": "{\"points\":{\"earned\":12,\"spent\":12,\"available\":0},\"biome\":{\"biomeId\":\"b_009\",\"biomeName\":\"鏋佹樇鍐版咕\",\"requiredLevel\":2000,\"isUnlocked\":true,\"masteryLevel\":2,\"xpBonusBasisPoints\":1700,\"directGoldBonusBasisPoints\":1700,\"rarities\":[{\"rarity\":\"common\",\"rarityName\":\"鏅€歕",\"completedLevel\":2,\"targetLevel\":3,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_common_06\",\"name\":\"鍐婚湶閽堥奔\",\"imagePath\":\"/fish/b_009_common_06.be418fc4ab7ecb6c.webp\"},\"requiredQuantity\":3600,\"contributedQuantity\":0,\"remainingQuantity\":3600,\"availableQuantity\":0,\"isFishLocked\":true,\"xpBonusBasisPoints\":100,\"directGoldBonusBasisPoints\":100},{\"rarity\":\"uncommon\",\"rarityName\":\"缃曡\",\"completedLevel\":3,\"targetLevel\":4,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_uncommon_10\",\"name\":\"闆搩娴疯灪\",\"imagePath\":\"/fish/b_009_uncommon_10.1d743d2ba9707d05.webp\"},\"requiredQuantity\":2592,\"contributedQuantity\":375,\"remainingQuantity\":2217,\"availableQuantity\":0,\"isFishLocked\":true,\"xpBonusBasisPoints\":150,\"directGoldBonusBasisPoints\":150},{\"rarity\":\"fine\",\"rarityName\":\"绮捐壇\",\"completedLevel\":4,\"targetLevel\":5,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_fine_08\",\"name\":\"鏋佸厜娴峰ぉ浣縗",\"imagePath\":\"/fish/b_009_fine_08.94de9c9d2ee78296.webp\"},\"requiredQuantity\":1555,\"contributedQuantity\":1269,\"remainingQuantity\":286,\"availableQuantity\":0,\"isFishLocked\":true,\"xpBonusBasisPoints\":200,\"directGoldBonusBasisPoints\":200},{\"rarity\":\"rare\",\"rarityName\":\"绋€鏈塡",\"completedLevel\":5,\"targetLevel\":null,\"isWaiting\":true,\"fish\":null,\"requiredQuantity\":0,\"contributedQuantity\":0,\"remainingQuantity\":0,\"availableQuantity\":0,\"isFishLocked\":false,\"xpBonusBasisPoints\":250,\"directGoldBonusBasisPoints\":250},{\"rarity\":\"epic\",\"rarityName\":\"鍙茶瘲\",\"completedLevel\":5,\"targetLevel\":null,\"isWaiting\":true,\"fish\":null,\"requiredQuantity\":0,\"contributedQuantity\":0,\"remainingQuantity\":0,\"availableQuantity\":0,\"isFishLocked\":false,\"xpBonusBasisPoints\":250,\"directGoldBonusBasisPoints\":250},{\"rarity\":\"legendary\",\"rarityName\":\"浼犺\",\"completedLevel\":3,\"targetLevel\":4,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_legendary_03\",\"name\":\"鏋佸厜绁炵考槌怽",\"imagePath\":\"/fish/b_009_legendary_03.cfab70b2cf1c00de.webp\"},\"requiredQuantity\":43,\"contributedQuantity\":4,\"remainingQuantity\":39,\"availableQuantity\":0,\"isFishLocked\":true,\"xpBonusBasisPoints\":150,\"directGoldBonusBasisPoints\":150},{\"rarity\":\"mythic\",\"rarityName\":\"绁炶瘽\",\"completedLevel\":2,\"targetLevel\":3,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_mythic_04\",\"name\":\"闆煶榧撹吂楸糪",\"imagePath\":\"/fish/b_009_mythic_04.5e759eb0bb2ac3d0.webp\"},\"requiredQuantity\":14,\"contributedQuantity\":7,\"remainingQuantity\":7,\"availableQuantity\":0,\"isFishLocked\":true,\"xpBonusBasisPoints\":200,\"directGoldBonusBasisPoints\":200},{\"rarity\":\"exotic\",\"rarityName\":\"濂囧紓\",\"completedLevel\":2,\"targetLevel\":3,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_exotic_03\",\"name\":\"鎶樺厜涓冭壊槌梊",\"imagePath\":\"/fish/b_009_exotic_03.0592a6bbadca417c.webp\"},\"requiredQuantity\":2,\"contributedQuantity\":1,\"remainingQuantity\":1,\"availableQuantity\":0,\"isFishLocked\":true,\"xpBonusBasisPoints\":200,\"directGoldBonusBasisPoints\":200},{\"rarity\":\"arcane\",\"rarityName\":\"濂ョ\",\"completedLevel\":2,\"targetLevel\":3,\"isWaiting\":false,\"fish\":{\"id\":\"b_009_arcane_01\",\"name\":\"鏋佸啝瀹氭槦榫欓硶\",\"imagePath\":\"/fish/b_009_arcane_01.342c27dbedcb2b7d.webp\"},\"requiredQuantity\":1,\"contributedQuantity\":0,\"remainingQuantity\":1,\"availableQuantity\":0,\"isFishLocked\":false,\"xpBonusBasisPoints\":200,\"directGoldBonusBasisPoints\":200}]},\"serverTime\":\"2026-09-28T09:56:11.935Z\"}"
+}
