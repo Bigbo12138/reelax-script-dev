@@ -1,9 +1,9 @@
 {
-  "updatedAt": 1790743695467,
+  "updatedAt": 1790744053459,
   "raw": {
     "date": "20260930",
     "startedAt": 1790697613462,
-    "activeSec": 46139,
+    "activeSec": 46499,
     "offlineSec": 0,
     "refillOk": 0,
     "refillNeeded": 0,
@@ -22,24 +22,24 @@
       "at": 1790697853637
     },
     "pity": {
-      "updatedAt": 1790743624523,
+      "updatedAt": 1790743939123,
       "effectiveLuck": 12336,
       "baitId": "bait_supreme",
       "weatherId": "arcane_surge",
       "arcane": {
-        "currentDry": 3306,
+        "currentDry": 3357,
         "maxDry": 38201,
         "hardPity": 33218,
-        "pct": 9.952435426575953
+        "pct": 10.105966644590282
       },
       "exotic": {
-        "currentDry": 1627,
+        "currentDry": 1678,
         "maxDry": 12649,
         "hardPity": 6881,
-        "pct": 23.644819066996074
+        "pct": 24.385990408370876
       }
     },
-    "lastTickAt": 1790743693460,
+    "lastTickAt": 1790744053459,
     "_prevDaily": {
       "date": "20260929",
       "startedAt": 1790611211731,
