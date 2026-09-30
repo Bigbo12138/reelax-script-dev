@@ -16,6 +16,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify manifest version matches tag
+        shell: bash
+        run: |
+          set -e
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST=$(python3 -c "import json;print(json.load(open('manifest.json'))['version'])")
+          echo "tag version  : $TAG"
+          echo "manifest ver : $MANIFEST"
+          if [ "$TAG" != "$MANIFEST" ]; then
+            echo "::error::manifest.json version ($MANIFEST) 与发布 tag ($GITHUB_REF_NAME) 不一致，请先同步 manifest.json 版本再打 tag。" >&2
+            exit 1
+          fi
+
       - name: Build source zip
         shell: bash
         run: |
