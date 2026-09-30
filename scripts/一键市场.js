@@ -337,6 +337,22 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       if (bargainState && bargainState.sorted.length && bargainState.render) bargainState.render();
       autoSaveBargain();
     });
+    // 勾选/取消「仅拉取专精鱼」时，直接在当前已拉取的单子中筛/放回专精鱼（不重新扫描）
+    const masteryCb = el('rlb-tab-mastery');
+    if (masteryCb) masteryCb.addEventListener('change', () => {
+      if (bargainState && bargainState.sorted.length && bargainState.render) {
+        bargainState.render();
+        const showing = el('rlb-list');
+        if (showing) {
+          const only = masteryCb.checked;
+          const visibleN = only ? bargainState.sorted.filter((it) => (bargainState.masterySet || new Set()).has(it.fishId)).length : bargainState.sorted.length;
+          const st = el('rlb-status');
+          if (st && visibleN === 0) st.textContent = only ? 'ℹ️ 当前拉取单中没有专精鱼' : 'ℹ️ 当前单中没有鱼在售';
+          else if (st && bargainState.sorted.length) st.textContent = `已筛选：共 ${visibleN} 种${only ? '专精' : ''}鱼（当前拉取单共 ${bargainState.sorted.length} 种）`;
+        }
+      }
+      autoSaveBargain();
+    });
     // 面板可拖动（改进：整条头栏可拖、防选中、阈值区分点击/拖动、drag 反馈、限制在视口内）
     let dragging = false, movedDrag = false, ox = 0, oy = 0, sx = 0, sy = 0;
     const dragBar = panel.querySelector('div:nth-child(1)') || panel;
@@ -751,10 +767,10 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       return `<div data-gapid="${escapeHtml(String(g.id))}" style="padding:5px 4px;border-bottom:1px solid #2a2a30;font-size:12px;color:#e8f5e9;">
         <div style="display:flex;align-items:center;gap:6px;">
           <input type="checkbox" class="r1cm-gap-check" data-gapid="${escapeHtml(String(g.id))}"${checked} style="width:14px;height:14px;accent-color:#2e7d32;margin:0;cursor:pointer;" title="勾选后可按建议价重挂"/>
-          <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          <span style="flex:1;min-width:0;white-space:normal;word-break:break-word;line-height:1.5;">
             <b>${escapeHtml(g.name)}</b>
-            <span style="color:#9e9e9e;margin-left:6px;">市场断层 ${(g.gapRatio * 100).toFixed(1)}%</span>
-            <span style="color:#4caf50;margin-left:6px;">${dirTag}价 ${fmtGold(g.m1)} → 建议 ${fmtGold(g.suggest)}</span>
+            <span style="display:block;color:#9e9e9e;margin-top:2px;">市场断层 ${(g.gapRatio * 100).toFixed(1)}%</span>
+            <span style="display:block;color:#4caf50;margin-top:2px;">${dirTag}价 ${fmtGold(g.m1)} → 建议 ${fmtGold(g.suggest)}</span>
           </span>
         </div>
       </div>`;
@@ -1007,22 +1023,40 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (st) st.textContent = `▶ 准备下架 ${targets.length} 条非最高价求购单…`;
     let okN = 0, failN = 0;
     for (const it of targets) {
-      // 被忽略（本次或永久）的挂单不下架
-      if (isIgnored(it)) { _maxChecked.delete(String(it.id)); continue; }
+      // 被忽略（本次或永久）的挂单不下架：从待处理里移除（已视作处理），其余项保留并继续显示
+      if (isIgnored(it)) {
+        _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id));
+        _maxChecked.delete(String(it.id));
+        renderMaxList();
+        continue;
+      }
       const res = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
-      _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id));
       _maxChecked.delete(String(it.id));
-      if (res && res.ok && res.status === 200) { okN++; }
-      else { failN++; }
+      // 仅下架成功的才从待处理列表移除；失败的保留显示（未勾选，可改价或稍后再次下架），不做「处理过就消失」
+      if (res && res.ok && res.status === 200) {
+        okN++;
+        _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id));
+      } else {
+        failN++;
+      }
       renderMaxList();
       if (st) st.textContent = `下架中：成功 ${okN} 条 / 失败 ${failN} 条`;
       await sleep(300);
     }
     if (st) st.textContent = `—— 下架完成：成功 ${okN} 条 / 失败 ${failN} 条 ——`;
+// 若仍有未处理（未勾选 / 下架失败 / 其余）的非最高价求购，保持列表与「一键下架」按钮，便于继续逐条处理；
+    // 仅剩已忽略项视作处理完毕，切回「最高价检测」。
+    const remaining = _nonMax.filter((x) => !isIgnored(x));
+    if (remaining.length) {
+      if (st) st.textContent = `仍有 ${remaining.length} 条未处理（勾选后可继续「一键下架」）。`;
+      renderMaxList();
+      setMaxMode('delist');
+      return;
+    }
     _nonMax = [];
     _maxChecked = new Set();
     clearMaxList();
-    setMaxMode('check'); // 下架完成后按钮恢复为「最高价检测」
+    setMaxMode('check'); // 全部处理完后按钮恢复为「最高价检测」
   }
 
   // 合并按钮入口：点最低价检测扫描完全后自动切为一键下架；一键下架完成后恢复为最低价检测
@@ -1336,11 +1370,16 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (r.ok) {
       const d = (r.data && r.data.data && typeof r.data.data === 'object') ? r.data.data : r.data;
       collectTargetFish(d, s);
+      console.log(TAG, '专精鱼(地图专精页全部目标鱼) count=' + s.size);
+      _masteryFish = s;
+      _masteryTs = Date.now();
+      return s;
     }
-    console.log(TAG, '专精鱼(地图专精页全部目标鱼) count=' + s.size);
-    _masteryFish = s;
-    _masteryTs = Date.now();
-    return s;
+    // 专精数据获取失败：不要缓存空集合（否则会持续 5 分钟把「专精鱼」误判为空 → 误报「该条件下没有专精鱼」）。
+    // 已有缓存则沿用；否则返回 null 让调用方区分「无数据」与「确实没有专精鱼」。
+    if (_masteryFish) return _masteryFish;
+    console.warn(TAG, '专精数据获取失败(免签/超时), 无缓存可用');
+    return null;
   }
   // 收集 /api/mastery 中所有稀有度目标条目的 fish.id（每条目标鱼都算专精鱼）
   function collectTargetFish(node, set, depth) {
@@ -1364,10 +1403,11 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (r.ok) {
       const d = (r.data && r.data.data && typeof r.data.data === 'object') ? r.data.data : r.data;
       collectRemaining(d, m);
+      _masteryRem = m;
+      _masteryRemTs = Date.now();
+      return m;
     }
-    _masteryRem = m;
-    _masteryRemTs = Date.now();
-    return m;
+    return _masteryRem || m; // 获取失败：沿用缓存；无缓存则返回空 Map（不缓存）
   }
   function collectRemaining(node, map, depth) {
     if (node == null || depth > 8) return;
@@ -1391,10 +1431,11 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (r.ok) {
       const d = (r.data && r.data.data && typeof r.data.data === 'object') ? r.data.data : r.data;
       collectLevel(d, m);
+      _masteryLvl = m;
+      _masteryLvlTs = Date.now();
+      return m;
     }
-    _masteryLvl = m;
-    _masteryLvlTs = Date.now();
-    return m;
+    return _masteryLvl || m; // 获取失败：沿用缓存；无缓存则返回空 Map（不缓存）
   }
   function collectLevel(node, map, depth) {
     if (node == null || depth > 8) return;
@@ -1446,10 +1487,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (biome) targets = targets.filter((f) => f.biomeId === biome);
     // 勾选「仅拉取专精鱼」时，仅保留玩家专精链目标鱼（masteryFishIds 返回的 fishId 集合）
     const onlyMastery = el('rlb-tab-mastery') ? el('rlb-tab-mastery').checked : false;
-    const mset = await masteryFishIds(); // 专精鱼 fishId 集合（标 *）
+    const mset = await masteryFishIds(); // 专精鱼 fishId 集合（标 *）；获取失败时可能为 null
     // 专精鱼当前等级映射（供渲染显示专精等级）
     const lvlMap = await masteryLevelMap();
     const myBuy = await myActiveBuyFishIds();
+    if (onlyMastery && mset === null) {
+      if (st) st.textContent = '⚠️ 专精数据获取失败，无法筛选专精鱼（请重试）';
+      return;
+    }
     if (onlyMastery) {
       targets = targets.filter((f) => mset.has(f.fishId));
     }
@@ -1469,16 +1514,20 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const renderBargainList = () => {
       if (!listBox) return;
       const useBid = el('rlb-tab-usebid') ? el('rlb-tab-usebid').checked : false;
-      sorted.sort((a, b) => {
+      // 「仅拉取专精鱼」为视图层筛选：从不改动 sorted，仅在渲染时按专精集合过滤，
+      // 这样勾选/取消勾选能直接在已拉取的单子中切换，无需重新扫描。
+      const nurMon = el('rlb-tab-mastery') ? el('rlb-tab-mastery').checked : false;
+      const visible = (nurMon && mset) ? sorted.filter((it) => mset.has(it.fishId)) : sorted;
+      visible.sort((a, b) => {
         const pa = useBid ? (a.bid == null ? -1 : a.bid) : (a.ask == null ? Infinity : a.ask);
         const pb = useBid ? (b.bid == null ? -1 : b.bid) : (b.ask == null ? Infinity : b.ask);
         return pa - pb;
       });
-      const html = sorted.map((it, idx) => {
+      const html = visible.map((it, idx) => {
         const pure = stripBracket(it.name);
         const url = 'https://reelax.cn/market?fishSearch=' + encodeURIComponent(pure) +
           '&fishBiome=' + encodeURIComponent(it.biomeId);
-        const star = mset.has(it.fishId) ? '*' : '';
+        const star = mset && mset.has(it.fishId) ? '*' : '';
         const linkColor = star ? '#4aa3ff' : '#d4a520';
         const price = useBid ? (it.bid == null ? 0 : it.bid) : (it.ask == null ? null : it.ask);
         const priceColor = useBid ? '#9b59b6' : '#2f9e44';
@@ -1523,7 +1572,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         window.location.assign(link.getAttribute('data-url'));
       };
     };
-    bargainState = { sorted: sorted, checked: checkedBoxes, render: renderBargainList };
+    bargainState = { sorted: sorted, checked: checkedBoxes, render: renderBargainList, masterySet: mset };
 
     // 节流与恢复策略：默认 200ms 一条；单条失败自动重试（300/800ms 退避）；
     // 连续 4 次失败视为被限流 → 熔断暂缓并逐步拉大间隔；连续成功 8 条后回落间隔。
@@ -1714,16 +1763,19 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const checkedBoxes = new Set();
     const render = () => {
       const useBid = el('rlb-tab-usebid') ? el('rlb-tab-usebid').checked : false;
-      sorted.sort((a, b) => {
+      // 「仅拉取专精鱼」为视图层筛选，从不改动 sorted（已恢复的单子可直接切换筛/放回）
+      const nurMon = el('rlb-tab-mastery') ? el('rlb-tab-mastery').checked : false;
+      const visible = (nurMon && mset) ? sorted.filter((it) => mset.has(it.fishId)) : sorted;
+      visible.sort((a, b) => {
         const pa = useBid ? (a.bid == null ? -1 : a.bid) : (a.ask == null ? Infinity : a.ask);
         const pb = useBid ? (b.bid == null ? -1 : b.bid) : (b.ask == null ? Infinity : b.ask);
         return pa - pb;
       });
-      listBox.innerHTML = sorted.map((it, idx) => {
+      listBox.innerHTML = visible.map((it, idx) => {
         const pure = stripBracket(it.name);
         const url = 'https://reelax.cn/market?fishSearch=' + encodeURIComponent(pure) +
           '&fishBiome=' + encodeURIComponent(it.biomeId || '');
-        const star = mset.has(it.fishId) ? '*' : '';
+        const star = mset && mset.has(it.fishId) ? '*' : '';
         const linkColor = star ? '#4aa3ff' : '#d4a520';
         const price = useBid ? (it.bid == null ? 0 : it.bid) : (it.ask == null ? null : it.ask);
         const priceColor = useBid ? '#9b59b6' : '#2f9e44';
@@ -1766,7 +1818,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         window.location.assign(link.getAttribute('data-url'));
       };
     };
-    bargainState = { sorted: sorted, checked: checkedBoxes, render: render };
+    bargainState = { sorted: sorted, checked: checkedBoxes, render: render, masterySet: mset };
     if (el('rlb-tab-rarity')) el('rlb-tab-rarity').value = rarity;
     render();
     if (st) st.textContent = `已恢复上次扫描：共 ${sorted.length} 种「${rarityName}」鱼（30 分钟内有效）`;
@@ -1788,11 +1840,12 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       if (st) st.textContent = `▶ 开始重挂 ${targets.length} 条：先下架旧求购，再按最高求购价 ${x >= 0 ? '+' : ''}${x} 发布…`;
       for (let i = 0; i < targets.length; i++) {
         const it = targets[i];
-        if (isIgnored(it)) { if (st) st.textContent = `${i + 1}/${targets.length} ⊘ ${label(it)} 已忽略，跳过`; continue; }
+        if (isIgnored(it)) { if (st) st.textContent = `${i + 1}/${targets.length} ⊘ ${label(it)} 已忽略，跳过`; _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id)); _maxChecked.delete(String(it.id)); continue; }
         // 1) 下架旧求购单
         const del = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
         if (!(del && del.ok && del.status === 200)) {
           failN++;
+          _maxChecked.delete(String(it.id)); // 失败保留显示但取消勾选，避免误重试；可改价或稍后再次处理
           if (st) st.textContent = `${i + 1}/${targets.length} ❌ ${label(it)} 下架失败, 停止重挂该条`;
           await sleep(300);
           continue;
@@ -1800,6 +1853,9 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         // 2) 按「市场最高求购价 + X」发布新单（无求购→bid 视 0+X），数量恢复原单剩余量
         const limitUnitPrice = (it.highest == null ? 0 : it.highest) + x;
         const r = await placeBuyOrder(it.fishId, it.name, limitUnitPrice, it.quantity);
+        // 无论发布成败，旧单已下架，该条不再属「待重挂」；发布失败的另由新单状态决定（不再折叠回 _nonMax）
+        _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id));
+        _maxChecked.delete(String(it.id));
         if (r.ok) {
           okN++;
           if (st) st.textContent = `${i + 1}/${targets.length} ✅ ${label(it)} 已下架并重挂 @ ${fmtGold(limitUnitPrice)}`;
@@ -1810,10 +1866,20 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         await sleep(300);
       }
       if (st) st.textContent = `—— 重挂完成：成功 ${okN} / 失败 ${failN} ——`;
+      // 仍有未处理（未勾选 / 失败 / 忽略跳过）的非最高价求购时，保留列表与按钮，便于继续逐条处理；
+      // 仅剩已忽略项视作处理完毕，切回「最高价检测」。
+      const remaining = _nonMax.filter((x) => !isIgnored(x));
+      if (remaining.length) {
+        if (st) st.textContent = `仍有 ${remaining.length} 条未处理（勾选后可继续重挂/下架）。`;
+        renderMaxList();
+        setMaxMode('delist');
+        if (btn) btn.disabled = false;
+        return;
+      }
       _nonMax = [];
       _maxChecked = new Set();
       clearMaxList();
-      setMaxMode('check'); // 重挂后按钮复位为「最高价检测」
+      setMaxMode('check'); // 全部处理完后按钮复位为「最高价检测」
       if (btn) btn.disabled = false;
       return;
     }
