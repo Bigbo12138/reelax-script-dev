@@ -235,7 +235,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     panel.dataset.tab = (tab || 'sell');
     // 深色主题（对齐遗物商店 UI）：夜间模式也能看清内容
     Object.assign(panel.style, {
-      position: 'fixed', right: '16px', top: '90px', zIndex: '99999',
+      position: 'fixed', right: '16px', top: '90px', zIndex: '1000000', // 需高于聚合面板(999999)以免被遮挡吞掉点击
       width: '380px', background: '#1e1e24', border: '1px solid #3a3a42', borderRadius: '10px',
       boxShadow: '0 6px 20px rgba(0,0,0,.5)', padding: '14px 16px', fontFamily: 'inherit',
       color: '#e8e8e8',
@@ -890,14 +890,25 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         <button id="${btnId}" style="width:100%;background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:6px;font-size:12px;cursor:pointer;">按建议价一键重挂选中</button>
       </div>`
     );
-    const btn = el(btnId);
-    if (btn) btn.addEventListener('click', () => relistGap(side));
-    box.querySelectorAll('.r1cm-gap-check').forEach((c) => {
-      c.addEventListener('change', () => {
+    // 事件委托到容器 box（r1cm-log / rlb-list 常驻，不随子节点重建而丢失），
+    // 彻底规避 el(btnId) 取到旧节点 / 渲染后事件未绑定导致的按钮点不动。
+    if (!box._gapRelistBound) {
+      box._gapRelistBound = true;
+      box.addEventListener('click', (e) => {
+        const b = (e.target && e.target.closest ? e.target.closest('[id="r1cm-gap-relist-cheap"], [id="r1cm-gap-relist-max"]') : null);
+        if (b) {
+          e.preventDefault(); e.stopPropagation();
+          console.log(TAG, '[gap-delegated] 捕获按钮点击 side=', b.id === 'r1cm-gap-relist-max' ? 'buy' : 'sell');
+          relistGap(b.id === 'r1cm-gap-relist-max' ? 'buy' : 'sell');
+        }
+      });
+      box.addEventListener('change', (e) => {
+        const c = e.target;
+        if (!c || !c.classList || !c.classList.contains('r1cm-gap-check')) return;
         const id = c.getAttribute('data-gapid');
         if (c.checked) _gapChecked.add(id); else _gapChecked.delete(id);
       });
-    });
+    }
   }
   function clearGapSection(listId) {
     const box = el(listId);
