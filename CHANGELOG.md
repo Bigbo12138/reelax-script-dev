@@ -4,6 +4,50 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.5.2] - 2026-10-06
+
+### Bug 修复：装备初始价把纯数字「卖家名」误判为售价
+- `scripts/装备初始价显示.js`：市场卡片的**售价提取**由"整卡扫描最大 ≥10万 数字"改为**优先精确定位 footer 内带硬币图标的售价 `<strong>`**（如 `<footer class="market-gear-card-footer"><strong>…coins…100,000,000</strong>`），拿不到 footer 时才回退原扫描逻辑。
+- 原因：当卖家名是纯数字（如 `<span class="market-gear-owner">122333</span>`）且 ≥100000 时，原整卡扫描会把它误判为售价，导致初始价 = 122333 − 强化累计 = 巨大负值（如 `-13,563,214`）。
+- 附带：回退扫描里也显式排除 `.market-gear-owner`，双重防误判。修复后示例应显示 `+86,314,453`（卖价 1 亿 − 奇异+4 强化累计 13,685,547）。
+
+### Bug 修复：同一装备卡出现两个「初始价」标签、等级波动为 +0
+- `scripts/装备初始价显示.js`：市场卡片渲染宿主**不稳定**（`findCardContainer` 可能返回 `.gear-item-heading`/`<footer>` 等子容器，而非最外层 `<article>`），导致：子容器无 `h2.rarity-text` → 强化等级读不到而按 +0 计（footer 出现 `强化累计 0` 绿标）；且不同子容器各自渲染、清理互不作用，同一装备卡上两个标签长期共存。
+- 修复：新增 `normalizeCardHost()` 将卡片宿主统一归一化到最外层 `<article>`（`.gear-item`/`.market-trade-gear-card` 等）；`findCardContainer` 与 `renderCard` 均先归一化再用。此后升级等级稳定读取 `h2 > small +N`，且同一张卡只保留一个初始价标签（重渲染会先清掉该卡全部旧标签）。
+
+### Bug 修复：赛后误判「赛事图」导致异航（不跟船）
+- `scripts/聚合.js`：`pickCompetition` 的**快照兜底路径**（基于 `biomes[].activeCompetitions`）此前只认「有 activeCompetitions」而**未按每日比赛时间窗过滤**（个人赛 10-11/15-16 点、公会赛 20-21 点，北京）。比赛结束后旧赛事实体仍挂在图快照上 → 深夜还会被误判为「赛事图」；又因 `赛事` 在优先级链中排第一顺位，把 `跟随船/经验/优选` 全部短路，导致玩家的船开到赛事图时而本人却没跟上（异航、不跟船）。
+- 修复：兜底路径在选择候选赛事图前，**按每个赛事的 kind 对应比赛时间窗过滤**（`_bjInCompWindow(kind)`，非 guild 一律按 personal 时段判定）。非赛事时段即使快照残留 activeCompetitions 也不再认定该图为赛事图，从而正确落到后续优先级（跟随船等）。精准归属路径本就带时间窗判定，现两路径语义对齐。
+
+### 行为调整：船长/舵手整船选图固定为「赛事 → 官方推荐」
+- `scripts/聚合.js`：船长/舵手的**自动开船目标**由「完整优先级链（赛事/经验/优选/官方…）」改为固定两级——**有比赛（个人/公会赛）整船去赛事图；无比赛整船去官方推荐图**；**经验优选/新优选不再作为船长/舵手的整船目标**。
+- 官方推荐**不依赖「官方航线」开关（`useOfficialRoute`）**：只要服务端 `routeAssistant.travel()` 给了 `targetBiomeId` 就作为目标（读 `pickOfficialRoute`，其本身不受 useOfficialRoute 限制）。与前述补丁联动：深夜无赛事时 `pickCompetition` 返回 null，天然落到官方推荐。
+- 船员行为不变（仍为「赛事 → 跟随船」）；`pickBestIgnoringBoat()` 仍仅用于船员分支的「船图 vs 最优图」加成对比展示，不参与实际移动。
+
+### 调整：赛事进场预热从「提前 5 分钟」改为「提前 2 分钟」
+- `scripts/聚合.js`：赛事地图的进场预热由**开始前 5 分钟**缩为**开始前 2 分钟**，两处同步修改——`_bjInCompWindow` 的进入时间窗（聚合.js `w[0] - 2`）与 `getActiveCompetitionTargets` 的「已报名且进行中」判定（`now >= s - 2*60*1000`），避免两路径判定割裂。
+- 进场：个人赛 09:58 / 14:58、公会赛 19:58（北京）起判定为赛事时段；**退出仍在比赛结束整点（11/16/21 点）起**，不受影响。
+- 说明：如嫌到图缓冲不足，可按需调大（改回 3~5 分钟给切图留缓冲更稳妥）。
+
+### 新增：赛事进/退判定用「服务器时钟校准」（防本地时钟漂移）
+- `scripts/聚合.js`：赛事进出场的时刻判定由**纯本地时钟**改为**服务器时间校准后**进行，避免本地时钟漂移导致进/退赛判定偏差。
+- 校准源：每轮 `fetchAllData` 已抓取的 `serverTime`（游戏 API 快照 `snapshot.serverTime` 优先，HTTP 直调路径取 `/api/biomes`/`/api/me` 兜底），**零新增请求**。
+- 实现：新增 `updateClockDelta()` 在每次抓取时计算偏移 `clockDeltaMs = serverTime − 本地`；判定统一走 `serverNowMs()`（校准值 **5 分钟未刷新则自动回退纯本地时间**，防陈旧偏差）。`getActiveCompetitionTargets` 的 `now` 与 `_bjNowMin` 均已改用校准时间。
+- 实测 fast：当时本地与服务器偏差约 −3.2 秒（毫秒级），校准主要应对长时间挂机时本地时钟漂移。
+- **扩展弹窗展示**：Reelax 助手 popup「游戏状态」区块新增 **服务器时间 / 本地时间 / 时钟偏移** 三行（偏移量显示毫秒）。数据流：聚合.js `updateClockDelta` 每轮 `window.postMessage({__reelaxClock})` → injector.js 转发 `reelax-clock-status` → monitor.js 写 `m.clock` → popup.js `renderSync` 每 2s 刷新展示；均走既有消息通道，零新增请求。
+
+### 新增：每 5 分钟巡检「当前地图公会增益」
+- `monitor.js`：新增**每 5 分钟定时**（`chrome.alarms`，SW 休眠到点也能唤醒，`AUTO_BOOST_POLL_ALARM`）巡检**当前地图是否已开启公会经验增益**；若未开，则为当前地图按**当前天气剩余时长**折算份数补开（`handleAutoBoost` → 份数 `computeAutoBoostUnits(weatherEndsAt)`，只看剩余分钟、不看天气类型）。
+- 完全复用现有 `handleAutoBoost` 的整套守卫：已有增益（`already-active`）、同一图 5 分钟冷却（`cooldown`）、献祭进度/距赛检查、份数折算与历史记录，因此不会重复购买已生效的增益。
+- 巡检直接读 `refreshCurrentStatus` 每 30s 刷新的 `m.currentStatus`（当前图 `currentBiome` / 增益 `guildBoost` / 天气剩余 `weather.endsAt`），零新增状态接口。与既有「聚合选图通知驱动」开增益共存，互为兜底。
+
+### 新增：弹窗「自动开增益」面板的公会增益监测
+- `monitor.js`：每 5 分钟巡检**当前地图**是否已开启公会经验增益（`AUTO_BOOST_POLL_ALARM` + `pollCurrentMapAutoBoost`），未开则按当前天气剩余折算份数补开；完全复用 `handleAutoBoost` 的守卫（已有增益/冷却/献祭/距赛检查），不重复购买。每轮结果（含"已存在不购买"等）都 `recordAutoBoost` 写入历史并经 `__monitorStatus.autoBoost` 暴露。
+- `popup.js` + `popup.html`：弹窗「监控 → 自动开增益」面板：
+  - **「公会增益监测倒计时」**行（`#ab-poll-countdown`）显示距下次每 5 分钟巡检的剩余 `HH:MM:SS`（`fmtCountdown`，读 `m.autoBoostPollNextAt`）。
+  - **「历史(最近10条)」**框输出每次监测结果（时间 + 动作 + 地图，含"已存在不购买"等），由 `refreshBoostResultUI()` 每 1 秒刷新（读 `m.autoBoostHistory`）。
+  - 「公会增益」行保留秒级剩余倒计时（`🕒 剩 HH:MM:SS`）。
+
 ## [v1.5.1] - 2026-09-30
 
 ### Bug 修复

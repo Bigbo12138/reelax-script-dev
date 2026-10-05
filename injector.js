@@ -55,6 +55,16 @@
       browser.runtime.sendMessage({ type: 'reelax-auto-boost', data: data.__reelaxAutoBoost })
         .catch(() => { /* 后台未加载忽略 */ });
     }
+    // 转发主世界「服务器时钟校准状态」到后台（聚合.js → monitor.js → popup「游戏状态」）
+    if (data && data.__reelaxClock && data.serverTime != null) {
+      browser.runtime.sendMessage({
+        type: 'reelax-clock-status',
+        serverTime: data.serverTime,
+        local: data.local || null,
+        deltaMs: (typeof data.deltaMs === 'number' ? data.deltaMs : null),
+        at: data.at || null,
+      }).catch(() => { /* 后台未加载忽略 */ });
+    }
     // 转发主世界「挂机日报：补杆结果」到后台（聚合.js → monitor.js 统计）
     // 聚合.js 发的结构是 { __reelaxDailyRefill:true, ok:bool }（__reelaxDailyRefill 为布尔标记，
     // ok 在顶层）。之前读 data.__reelaxDailyRefill.ok 时，布尔 true 无 .ok 属性 → 恒为 false，

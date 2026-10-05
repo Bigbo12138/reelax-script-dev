@@ -158,6 +158,13 @@
   // 市场卡片不展示四维标签（实测 scan 找不到），因此改按市场页特征定位——
   // 同时满足"出现一个稀有度中文词" + "出现一个 ≥10万 的大数字"的最近祖先。
   // 金币余额/页头通常不同时含稀有度词，可避免误判。
+  // 定位到后一律归一化到最外层装备卡片（<article>/卡片容器），避免把 heading/footer 等
+  // 子容器当卡片宿主，导致 upgrade 解析抖动、同类标签重复共存。
+  function normalizeCardHost(el) {
+    if (!el) return null;
+    return el.closest('article, .gear-item, .market-trade-gear-card, .gear-market-list > *, [class*="gear-card"]')
+      || (el.nodeType === Node.ELEMENT_NODE ? el : el.parentElement);
+  }
   function findCardContainer(startEl) {
     let node = startEl;
     for (let depth = 0; node && depth < 12; depth++, node = node.parentElement) {
@@ -170,7 +177,7 @@
         const num = parseInt(t.replace(/[,\s]/g, ''), 10);
         return Number.isFinite(num) && num >= 100000;
       });
-      if (hasRarity && hasBigNumber) return node;
+      if (hasRarity && hasBigNumber) return normalizeCardHost(node);
     }
     return null;
   }
@@ -236,35 +243,68 @@
       }
     }
 
-    // 3. 售价：找卡片里"最像在售价格数字"的那个文本（排除百分比/属性值/±/小数/强化等级）。
-    //    改良：售价几乎都带千位分隔符(如 1,234,567)，而属性/词条值不带，所以优先取"带 `,` 的最大整数"；
-    //    无带 `,` 数字时再回退取卡内最大整数。
+    // 3. 售价：优先精确定位「售价数字」，避免把纯数字卖家名/其它大数字误判为价格。
+    //    市场卡片售价位于 <footer class="market-gear-card-footer"> 内带硬币图标的 <strong>（如
+    //    <strong>…coins svg…100,000,000</strong>）；脚本注入的绿标签是 <span.arc-gear-baseprice>，
+    //    不属 strong，天然不会被误取。拿不到 footer 时才回退到整卡扫描。
     let sellPrice = null, priceEl = null;
-    const priceCandidates = [];
-    const wP = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (node.parentElement && node.parentElement.closest('.arc-gear-baseprice')) return NodeFilter.FILTER_REJECT;
-        if (node.parentElement && node.parentElement.closest('.resource-balance')) return NodeFilter.FILTER_REJECT;
-        if (node.parentElement && node.parentElement.closest('.resource-panel, [class*="balance-panel"]')) return NodeFilter.FILTER_REJECT;
-        const t = node.nodeValue.trim();
-        if (!/[\d,]{3,}/.test(t)) return NodeFilter.FILTER_REJECT;
-        if (/^\d+(\.\d+)?%$/.test(t)) return NodeFilter.FILTER_REJECT;
-        if (/^[+＋\-－]\s*[\d,]+/.test(t)) return NodeFilter.FILTER_REJECT;
-        if (/^\d+\.\d+$/.test(t)) return NodeFilter.FILTER_REJECT; // 排除百分比小数
-        const num = parseInt(t.replace(/[,\s]/g, ''), 10);
-        if (!Number.isFinite(num) || num < 100000) return NodeFilter.FILTER_REJECT;
-        priceCandidates.push({ node, num, hasComma: t.includes(',') });
-        return NodeFilter.FILTER_ACCEPT;
+
+    // 3a. 优先：footer 内的售价 <strong>（排除脚本自己的 .arc-gear-baseprice）
+    {
+      const footer = card.querySelector('.market-gear-card-footer') || card.querySelector('footer');
+      if (footer) {
+        const wS = document.createTreeWalker(footer, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (node.parentElement && node.parentElement.closest('.arc-gear-baseprice')) return NodeFilter.FILTER_REJECT;
+            const t = node.nodeValue.trim();
+            return /[\d,]{3,}/.test(t) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+          }
+        });
+        let sn;
+        while ((sn = wS.nextNode())) {
+          const parent = sn.parentElement;
+          // 缩窄到直接售价 <strong>：该 strong 通常含硬币 svg（如 lucide-coins）作为第一个子元素，
+          // 且其后是按钮。strides 即只认「文本数字较大」的 strong。
+          const isStrong = parent && parent.tagName === 'STRONG';
+          if (isStrong) {
+            const t = sn.nodeValue.trim();
+            const num = parseInt(t.replace(/[,\s]/g, ''), 10);
+            if (Number.isFinite(num) && num >= 100000) { sellPrice = num; priceEl = parent; break; }
+          }
+        }
       }
-    });
-    while (wP.nextNode()) {}
-    if (priceCandidates.length) {
-      const withComma = priceCandidates.filter((c) => c.hasComma);
-      const pool = withComma.length ? withComma : priceCandidates;
-      pool.sort((a, b) => b.num - a.num);
-      const best = pool[0];
-      sellPrice = best.num;
-      priceEl = best.node.parentElement;
+    }
+
+    // 3b. 回退：整卡扫描最大数字（保留原有行为，作为兜底）
+    if (sellPrice == null) {
+      const priceCandidates = [];
+      const wP = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (node.parentElement && node.parentElement.closest('.arc-gear-baseprice')) return NodeFilter.FILTER_REJECT;
+          if (node.parentElement && node.parentElement.closest('.resource-balance')) return NodeFilter.FILTER_REJECT;
+          if (node.parentElement && node.parentElement.closest('.resource-panel, [class*="balance-panel"]')) return NodeFilter.FILTER_REJECT;
+          // 卖家名可能是纯数字（如 <span class="market-gear-owner">122333</span>），会被误判为售价 → 排除。
+          if (node.parentElement && node.parentElement.closest('.market-gear-owner')) return NodeFilter.FILTER_REJECT;
+          const t = node.nodeValue.trim();
+          if (!/[\d,]{3,}/.test(t)) return NodeFilter.FILTER_REJECT;
+          if (/^\d+(\.\d+)?%$/.test(t)) return NodeFilter.FILTER_REJECT;
+          if (/^[+＋\-－]\s*[\d,]+/.test(t)) return NodeFilter.FILTER_REJECT;
+          if (/^\d+\.\d+$/.test(t)) return NodeFilter.FILTER_REJECT; // 排除百分比小数
+          const num = parseInt(t.replace(/[,\s]/g, ''), 10);
+          if (!Number.isFinite(num) || num < 100000) return NodeFilter.FILTER_REJECT;
+          priceCandidates.push({ node, num, hasComma: t.includes(',') });
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      while (wP.nextNode()) {}
+      if (priceCandidates.length) {
+        const withComma = priceCandidates.filter((c) => c.hasComma);
+        const pool = withComma.length ? withComma : priceCandidates;
+        pool.sort((a, b) => b.num - a.num);
+        const best = pool[0];
+        sellPrice = best.num;
+        priceEl = best.node.parentElement;
+      }
     }
 
     // 3.5 装备名：从 h2.rarity-text 取第一个文本节点（排除 small 的 +N 强化等级），用于订单指纹匹配
@@ -282,6 +322,9 @@
 
   // ---------- 渲染单张卡片 ----------
   function renderCard(card) {
+    // 统一渲染宿主为最外层装备卡片（避免 heading/footer 子容器当 card → 标签重复/upgrade 抖动）
+    card = normalizeCardHost(card);
+    if (!card) return;
     const info = extractGearInfo(card);
     if (!info || !info.rarity) return;
     if (!RARITY_KEYS.includes(info.rarity)) return;
