@@ -148,6 +148,8 @@
     gameApiReady: false,      // API是否已就绪
     eventUnsubscribers: [],   // 事件取消订阅函数列表
     netFailStreak: 0,         // 连续网络层失败次数（达到阈值则刷新页面）
+    clockDeltaMs: 0,         // 服务器时钟校准偏移（serverTime - 本地区，ms）；0=未校准
+    clockLastAt: null,       // 最近一次校准的采集时刻
   };
 
   let pollTimer = null;
@@ -456,7 +458,7 @@
   // 从缓存的赛事总览里挑「已报名且正在进行」的赛事，返回 {biomeId, kind} 列表。
   // 仅返回我们真正归属的赛事图，天然排除「别人公会的赛事 / 未报名的赛事」。
   function getActiveCompetitionTargets() {
-    const now = Date.now();
+    const now = serverNowMs(); // 用校准后的服务器时间（防本地时钟漂移误判进/退赛）
     const out = [];
     const kinds = ['personal', 'guild'];
     for (const kind of kinds) {
@@ -474,8 +476,8 @@
         if (!isReg(c)) continue;
         const s = c.startAt ? Date.parse(c.startAt) : NaN;
         const e = c.endAt ? Date.parse(c.endAt) : NaN;
-        // 进行中（开始前 5 分钟算预热，已报名即可前往）
-        if (Number.isFinite(s) && Number.isFinite(e) && now >= s - 5 * 60 * 1000 && now <= e) {
+        // 进行中（开始前 2 分钟算预热，已报名即可前往）
+        if (Number.isFinite(s) && Number.isFinite(e) && now >= s - 2 * 60 * 1000 && now <= e) {
           const biomeId = getCompetitionBiomeId(c);
           if (biomeId) out.push({ biomeId, kind, startAt: s });
         }
@@ -489,13 +491,45 @@
   // 个人赛：每天 10:00-11:00(600-660min)、15:00-16:00(900-960min)
   // 公会赛：每天 20:00-21:00(1200-1260min)
   const COMP_SCHEDULE = { personal: [[600, 660], [900, 960]], guild: [[1200, 1260]] };
+
+  // ---- 服务器时钟校准（防本地时钟漂移）----
+  // 用每次 fetchAllData 已抓到的 serverTime 校准进/退赛判定的 now。
+  // state.clockDeltaMs = serverTime - Date.now()；采集失败或过期则沿用旧值，避免用坏数据。
+  const CLOCK_DELTA_MAX_AGE_MS = 5 * 60 * 1000; // 校准值超过 5 分钟未刷新即视为过期
+  function serverNowMs() {
+    // 校准值新鲜时用校准后时间，否则回退纯本地时间（防陈旧偏差误判）
+    if (clockCalibrationFresh()) return Date.now() + state.clockDeltaMs;
+    return Date.now();
+  }
+  function updateClockDelta(serverTimeStr) {
+    const t = serverTimeStr ? Date.parse(serverTimeStr) : NaN;
+    if (!Number.isFinite(t)) return; // 无效服务器时间，沿用旧的校准值（并保持其新鲜度，避免过期回退本地）
+    const localNow = Date.now();
+    const deltaMs = t - localNow;
+    state.clockDeltaMs = deltaMs;
+    state.clockLastAt = localNow;
+    // 上报时钟状态给扩展（injector → monitor → popup「游戏状态」展示），每次都刷新
+    try {
+      window.postMessage({
+        __reelaxClock: true,
+        serverTime: serverTimeStr,
+        local: new Date(localNow).toISOString(),
+        deltaMs: deltaMs,
+        at: localNow,
+      }, '*');
+    } catch (_e) {}
+  }
+  function clockCalibrationFresh() {
+    return !!state.clockLastAt && (Date.now() - state.clockLastAt) < CLOCK_DELTA_MAX_AGE_MS;
+  }
+
   function _bjNowMin() {
-    const d = new Date(Date.now() + 8 * 3600 * 1e3);
+    const d = new Date(serverNowMs() + 8 * 3600 * 1e3);
     return d.getUTCHours() * 60 + d.getUTCMinutes();
   }
   function _bjInCompWindow(kind) {
     const min = _bjNowMin();
-    return (COMP_SCHEDULE[kind] || []).some((w) => min >= w[0] - 5 && min < w[1]);
+    return (COMP_SCHEDULE[kind] || []).some((w) => min >= w[0] - 2 && min < w[1]);
   }
 
   // 赛事总览主动补拉（方案A根因修复）
@@ -718,6 +752,7 @@
         const party = snapshot.party || null;
         state.partyInfo = party;
         const serverTime = snapshot.serverTime || new Date().toISOString();
+        updateClockDelta(serverTime);
 
         // 公会图腾经验加成：快照的 fishing 是精简版（无 run.effects），补一次签名只读请求拿服务器算好的加成。
         // 失败不影响主流程（图腾加成缺失时按 0 处理，所有地图一致，不影响排序）。
@@ -820,6 +855,8 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
 
     const player = sessionRes?.player || sessionRes || {};
     const serverTime = biomesRes?.serverTime || sessionRes?.serverTime || new Date().toISOString();
+
+    updateClockDelta(serverTime);
 
     // 筛选已解锁的地图
     const unlockedBiomes = biomes.filter(b => b.isUnlocked);
@@ -1173,8 +1210,17 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
       }
 
       // ---- 兜底：基于快照 biomes[].activeCompetitions（兼容缓存缺失/未报名）----
+      // 只在对应比赛时间窗内认定赛事图：若某赛事的 kind 不在其每日比赛时段
+      // （个人赛 10-11/15-16 点、公会赛 20-21 点，北京）内，即便快照残留了
+      // activeCompetitions 也不算“赛事图”，避免赛后很久仍被兜底误判为赛事
+      // 图、并按“赛事”优先级第一顺位把玩家拉离开（跟船/经验/优选全被短路）。
+      let candidates = competitionBiomes.filter(b =>
+        (b.activeCompetitions || []).some(c => {
+          const k = (c.type || c.kind);
+          return _bjInCompWindow(k === 'guild' ? 'guild' : 'personal');
+        })
+      );
       // 未加入公会时，跳过包含公会赛事的比赛地图（公会赛需要公会成员身份）
-      let candidates = competitionBiomes;
       const member = isGuildMember(data);
       if (!member) {
         candidates = competitionBiomes.filter(b =>
@@ -1248,8 +1294,12 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
           }
           // 本人图未解锁（理论上不会发生，isCurrent 必已解锁）→ 退回脚本最优
         }
-        // 本人图已与船图一致（或无法跟随）→ 退回脚本算出的整船最优图
-        const optimal = pickBestIgnoringBoat();
+        // 本人图已与船图一致（或无法跟随）→ 退回脚本算出的整船目标图。
+        // 船长/舵手整船目标固定为「赛事 → 官方推荐」两级（用户定调）：
+        // 有比赛(个人/公会)去赛事图；无比赛去官方推荐图；经验/优选不再作为船长整船目标。
+        // 官方推荐不依赖 useOfficialRoute 开关：只要服务端 routeAssistant 给了 targetBiomeId 就去。
+        // pickCompetition 已带每日时间窗过滤（见前面修复），深夜即无比赛 → 自然落到官方推荐。
+        const optimal = pickCompetition() || pickOfficialRoute();
         if (!optimal) {
           state.followBoatFallback = null;
           return null; // 无匹配优先级，保持船现状

@@ -85,6 +85,7 @@ const m = window.__monitorStatus = {
   lastReloadReason: null, // 最近刷新原因（'offline'|'login'）
   lastError: null,
   sync: null,             // 最近一次 fishing/sync 响应的精选字段
+  clock: null,            // 服务器时钟校准状态 {serverTime, local, deltaMs, at}（聚合.js 上报）
   webhookUrl: MONITOR_DEFAULTS.webhookUrl, // 企微 webhook（扩展统一发通知）
   feishuEnabled: MONITOR_DEFAULTS.feishuEnabled,   // 飞书通知开关
   feishuAppId: MONITOR_DEFAULTS.feishuAppId,       // 飞书 App ID
@@ -442,6 +443,15 @@ browser.runtime.onMessage.addListener((msg) => {
     // 保底/出货检测：同样用 sync 唤醒驱动（setInterval 在 SW 休眠下不跑，导致出货瞬间的
     // currentDry 回落永远不被 parsePity 观察到 → 出货 webhook 与日报出货 全 0）。节流 ~55s。
     checkPityThrottled();
+  }
+  // 服务器时钟校准状态（聚合.js 每轮上报 → popup「游戏状态」展示）
+  if (msg && msg.type === 'reelax-clock-status') {
+    m.clock = {
+      serverTime: msg.serverTime || null,
+      local: msg.local || null,
+      deltaMs: (typeof msg.deltaMs === 'number' ? msg.deltaMs : null),
+      at: msg.at || null,
+    };
   }
 });
 
@@ -3627,6 +3637,9 @@ function monitorStart() {
     startCurrentStatusCheck();
     startGearWatch();                                     // 市场装备监测（默认 10 分钟轮询 + webhook）
     setupTabRecord();
+    // 每 5 分钟巡检「当前地图公会增益」：当前图没开就往相关，注册 alarm（SW 休眠到点也能唤醒）
+    registerAutoBoostPollAlarmListener();
+    scheduleAutoBoostPollAlarm();
     // 挂机日报（总开关，默认关闭以隔离验证登录稳定性；开启后启用每日采集+调度）
     if (DAILY_REPORT_ENABLED) {
       startDailyCollect();
@@ -3937,7 +3950,77 @@ function scheduleDailyTickAlarm() {
     }
   } catch (e) { /* 忽略 */ }
 }
-let _dailyTickAlarmRegistered = false;
+
+// ---------- 每 5 分钟巡检「当前地图公会增益」 ----------
+// 需求：每 5 分钟看一次当前地图是否开了公会经验增益；没开就为当前地图开"按当前天气剩余
+// 时长折算"的份数（不看天气类型）。完全复用 handleAutoBoost 的整套守卫（已有增益防重、
+// 冷却、献祭/距赛检查、份数折算、历史记录），巡检只负责定时触发 + 喂当前图数据。
+const AUTO_BOOST_POLL_ALARM = 'auto-boost-poll-every-5min';
+const AUTO_BOOST_POLL_MIN = 5; // 每 5 分钟
+function scheduleAutoBoostPollAlarm() {
+  try {
+    if (window.chrome && chrome.alarms && chrome.alarms.create) {
+      chrome.alarms.create(AUTO_BOOST_POLL_ALARM, {
+        delayInMinutes: AUTO_BOOST_POLL_MIN,
+        periodInMinutes: AUTO_BOOST_POLL_MIN,
+      });
+      // 记录下次巡检触发点（给弹窗「公会增益监测倒计时」展示）
+      m.autoBoostPollNextAt = Date.now() + AUTO_BOOST_POLL_MIN * 60000;
+    }
+  } catch (e) { /* 忽略 */ }
+}
+let _autoBoostPollAlarmRegistered = false;
+function registerAutoBoostPollAlarmListener() {
+  if (_autoBoostPollAlarmRegistered) return;
+  _autoBoostPollAlarmRegistered = true;
+  try {
+    if (window.chrome && chrome.alarms && chrome.alarms.onAlarm) {
+      chrome.alarms.onAlarm.addListener((alarm) => {
+        if (!alarm || alarm.name !== AUTO_BOOST_POLL_ALARM) return;
+        // 到点巡检；同时推进「下次巡检触发点」倒计时
+        m.autoBoostPollNextAt = Date.now() + AUTO_BOOST_POLL_MIN * 60000;
+        pollCurrentMapAutoBoost().catch((e) => console.error('[AutoBoost] 每5分钟巡检异常:', e));
+      });
+    }
+  } catch (e) { /* 忽略 */ }
+}
+// 巡检：读 m.currentStatus（refreshCurrentStatus 每 30s 已刷新），当前图无增益则补开。
+async function pollCurrentMapAutoBoost() {
+  if (!m.guildBoostAuto) return; // 区域经验增益总开关关闭时不巡检
+  const cs = m.currentStatus;
+  if (!cs || !cs.currentBiome || !cs.currentBiome.id) return; // 状态还没就绪
+  const biomeId = cs.currentBiome.id;
+  const boost = cs.guildBoost || null;
+  // 已有未过期增益：不购买，但记录一条「监测结果」（增益已存在）到历史，便于在弹窗看到巡检结论。
+  if (boost && boost.isActive === true) {
+    recordAutoBoost({
+      ok: false,
+      reason: 'already-active',
+      label: '每5分钟巡检',
+      biomeId: biomeId,
+      biomeName: cs.currentBiome.name || null,
+      units: 0,
+      at: Date.now(),
+      diag: { triggerType: 'poll', reason: 'guild-boost-already-active' },
+    });
+    console.log('[AutoBoost] 每5分钟巡检：当前地图已有增益，不购买', biomeId);
+    return;
+  }
+  // 当前地图天气剩余（用于份数折算；不存在则交 handleAutoBoost 判 weather-too-short）
+  const weatherEndsAt = cs.weather ? (cs.weather.endsAt || null) : null;
+  const data = {
+    type: 'preferred',
+    biomeId: biomeId,
+    biomeName: cs.currentBiome.name || null,
+    priorityType: 'optimal', // 非赛事统一当「最优图」处理：份数只看天气剩余，不看天气类型
+    reason: '每5分钟巡检',
+    weatherEndsAt: weatherEndsAt,
+  };
+  const r = await handleAutoBoost(data);
+  if (r && r.ok) {
+    console.log('[AutoBoost] 每5分钟巡检：已为当前地图补开增益', biomeId, 'x' + r.units + '份');
+  }
+}
 function registerDailyTickAlarmListener() {
   if (_dailyTickAlarmRegistered) return;
   _dailyTickAlarmRegistered = true;

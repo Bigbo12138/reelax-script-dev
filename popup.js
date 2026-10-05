@@ -438,6 +438,21 @@ function renderSync() {
 
   // 在线人数
   el('sy-online').textContent = s.onlinePlayers != null ? fmtNum(s.onlinePlayers) + ' 人' : '—';
+
+  // 服务器时钟校准状态（聚合.js 每轮上报 → monitor.js → 这里展示，2s 刷新）
+  const clk = (window.__monitorStatus || {}).clock;
+  const fmtClock = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getUTCHours() + 8 > 23 ? d.getUTCHours() + 8 - 24 : d.getUTCHours() + 8)}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+  };
+  el('sy-clock-server').textContent = fmtClock(clk && clk.serverTime);
+  el('sy-clock-local').textContent = fmtClock(clk && clk.local);
+  el('sy-clock-delta').textContent = clk && typeof clk.deltaMs === 'number'
+    ? (clk.deltaMs > 0 ? '+' : '') + clk.deltaMs.toLocaleString() + ' ms'
+    : '—';
 }
 
 // 保底状态渲染（monitor.js 从 /api/statistics 提取的 pity 字段）
@@ -932,10 +947,80 @@ function setupAutoBoostControl() {
   });
 }
 
+// 公会增益剩余秒级倒计时：HH:MM:SS（endsAt 非法/缺失返回 null）
+function fmtCountdown(endAt) {
+  if (endAt == null) return null;
+  const end = (typeof endAt === 'number') ? endAt : Date.parse(endAt); // 兼容 ms 时间戳与 ISO 字符串
+  if (!Number.isFinite(end)) return null;
+  let sec = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+  const ss = String(sec % 60).padStart(2, '0');
+  const mm = String(Math.floor(sec / 60) % 60).padStart(2, '0');
+  const hh = String(Math.floor(sec / 3600)).padStart(2, '0');
+  return hh + ':' + mm + ':' + ss;
+}
+// 每 1 秒刷新：
+//   · #cs-guildboost：公会增益剩余倒计时
+//   · #ab-poll-countdown：距下次「每5分钟巡检」剩余倒计时
+//   · #ab-history：监测结果历史（最近10条）
+let gbCountdownTimer = null;
+function refreshBoostResultUI() {
+  const mon = window.__monitorStatus || {};
+  const pe = el('ab-poll-countdown');
+  if (pe) {
+    const next = mon.autoBoostPollNextAt;
+    const cd = fmtCountdown(next);
+    pe.textContent = cd != null ? ('剩 ' + cd) : '—';
+  }
+  const histEl = el('ab-history');
+  if (histEl) {
+    const hist = Array.isArray(mon.autoBoostHistory) ? mon.autoBoostHistory : [];
+    if (!hist.length) {
+      histEl.textContent = '暂无检查记录';
+    } else {
+      const lines = hist.slice(0, 10).map(function (h) {
+        const t = new Date(h.at).toLocaleTimeString();
+        const src = h.label || AB_REASON_CN[h.reason] || h.reason || '';
+        const act = h.ok === true
+          ? ('✅ ' + (src || '已开') + (h.units != null ? ' ' + h.units + '份' : ''))
+          : ('✖ ' + (src ? src + '·' : '') + (AB_FAIL_CN[h.reason] || h.reason || 'check'));
+        const hm = h.biomeId ? (' ' + (AB_BIOME_CN[h.biomeId] || h.biomeId)) : '';
+        return t + ' ' + act + hm;
+      });
+      histEl.innerHTML = lines.join('<br>');
+    }
+  }
+}
+function startGuildBoostCountdown() {
+  if (gbCountdownTimer) return;
+  gbCountdownTimer = setInterval(() => {
+    const mon = window.__monitorStatus || {};
+    const cs = mon.currentStatus;
+    // 公会增益剩余
+    if (cs && cs.guildBoost && cs.guildBoost.isActive) {
+      const e = el('cs-guildboost');
+      if (e) {
+        const cd = fmtCountdown(cs.guildBoost.endsAt);
+        e.textContent = '🕒 剩 ' + (cd != null ? cd : (cs.guildBoost.remainingMin ? '剩' + cs.guildBoost.remainingMin : '—'));
+      } else {
+        el('cs-guildboost') && (el('cs-guildboost').textContent = '无');
+      }
+    }
+    // 每次巡检后 handleAutoBoost 会更新 mon.autoBoost/autoBoostHistory；这里每 3s 刷新监测结果 + 历史
+    refreshBoostResultUI();
+  }, 1000);
+}
+
 function renderAutoBoost() {
   const mon = window.__monitorStatus || {};
   const a = mon.autoBoost;
   const setTxt = (id, t, cls) => { const e = el(id); if (e) { e.textContent = t; if (cls) e.className = cls; } };
+
+  // 「公会增益监测倒计时」初始值：距下次每5分钟巡检剩余时间（之后由 startGuildBoostCountdown 每秒刷新）
+  {
+    const next = mon.autoBoostPollNextAt;
+    const cd = fmtCountdown(next);
+    setTxt('ab-poll-countdown', cd != null ? ('剩 ' + cd) : '—');
+  }
 
   // 开关状态（区域经验增益自动开启），可点击切换
   const sw = el('ab-switch');
@@ -961,7 +1046,8 @@ function renderAutoBoost() {
       setTxt('cs-weather', '—');
     }
     if (cs.guildBoost && cs.guildBoost.isActive) {
-      setTxt('cs-guildboost', '✅ 有 · 至 ' + (cs.guildBoost.remainingMin ? '剩' + cs.guildBoost.remainingMin : (cs.guildBoost.endsAt ? new Date(cs.guildBoost.endsAt).toLocaleTimeString() : '')) , 'ok');
+      // 有增益：显示实时倒计时（秒级，由 startGuildBoostCountdown 每秒刷新）
+      setTxt('cs-guildboost', '🕒 剩 ' + fmtCountdown(cs.guildBoost.endsAt), 'ok');
     } else {
       setTxt('cs-guildboost', '无', '');
     }
@@ -1175,6 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderGearWatch();
     setupFishSellControls();
     setupAutoBoostControl();
+    startGuildBoostCountdown(); // 公会增益剩余秒级倒计时
     setupTabs();
     setupAllocControls();
     renderAlloc();
