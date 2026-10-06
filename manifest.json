@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Reelax 助手",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "浏览器启动时自动打开 reelax.cn，并向该站点注入可配置的 JS 脚本（如自动补满次数）。Chrome MV3 版本。",
   "homepage_url": "https://reelax.cn/",
   "permissions": [
