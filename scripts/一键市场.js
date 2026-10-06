@@ -1151,11 +1151,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
           notMax++;
           const fish = o.asset.fish || {};
           const pureRaw = stripBracket(String(fish.name || fish.fishId || ''));
+          // 与市场最高求购价的差距（比例）在「分档阈值 gapThreshold」内 → 默认勾选；超出则不勾选
+          const gapRatio = (highest - myBid) / Math.max(highest, 1);
           _nonMax.push({
-            id: (o.id || o.orderId), name, myBid, highest, fishId: fid,
+            id: (o.id || o.orderId), name, myBid, highest, gapRatio, fishId: fid,
             pure: pureRaw, quantity: qty,
             url: 'https://reelax.cn/market?fishSearch=' + encodeURIComponent(pureRaw),
           });
+          if (gapRatio <= gapThreshold(myBid)) _maxChecked.add(String(o.id || o.orderId));
         }
       } catch (e) {
         skipped++;
@@ -1295,8 +1298,10 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         } else {
           notMin++;
           const nmId = String(o.id || o.orderId);
-          _nonMin.push({ id: nmId, name, myPrice, lowest, fishId: fid, quantity: qty, pure: stripBracket(String((o.asset.fish && o.asset.fish.name) || fid || '')) });
-          _nonMinChecked.add(nmId);
+          // 与市场最低价的差距（比例）在「分档阈值 gapThreshold」内 → 默认勾选；超出则不勾选
+          const gapRatio = (myPrice - lowest) / Math.max(lowest, 1);
+          _nonMin.push({ id: nmId, name, myPrice, lowest, gapRatio, fishId: fid, quantity: qty, pure: stripBracket(String((o.asset.fish && o.asset.fish.name) || fid || '')) });
+          if (gapRatio <= gapThreshold(myPrice)) _nonMinChecked.add(nmId);
         }
       } catch (e) {
         skipped++;
