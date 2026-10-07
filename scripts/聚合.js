@@ -1238,6 +1238,7 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
         return idxB - idxA; // 降序，编号靠后的优先
       });
       const best = candidates[0];
+      if (!best) return null; // 当前不在任意赛事比赛时间窗内：不视为赛事图，交由后续优先级处理
       const competitions = best.activeCompetitions;
       const kinds = competitions.map(c => c.type || c.kind).filter(Boolean);
       const kindStr = kinds.length > 0
