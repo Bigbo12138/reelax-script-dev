@@ -4006,6 +4006,34 @@ async function pollCurrentMapAutoBoost() {
     console.log('[AutoBoost] 每5分钟巡检：当前地图已有增益，不购买', biomeId);
     return;
   }
+  // 巡检补开前「经验最优图」校验：仅当当前图 = 纯天气倍率最大的船可达最远图（经验最优口径，与
+  // 经验优选开增益校验 findBoostWeatherOptimalBiome 一致）时才开；否则记录 weather-not-optimal
+  // 不动手，避免在非最优图（如只是雨幕当前图）上浪费增益。取数失败则跳过校验（不误拦）。
+  let pollWeatherOpt = null;
+  try { pollWeatherOpt = await findBoostWeatherOptimalBiome(); } catch (_e) { pollWeatherOpt = null; }
+  if (pollWeatherOpt && pollWeatherOpt.biomeId !== biomeId) {
+    recordAutoBoost({
+      ok: false,
+      reason: 'weather-not-optimal',
+      label: '每5分钟巡检',
+      biomeId: biomeId,
+      biomeName: cs.currentBiome.name || null,
+      units: 0,
+      at: Date.now(),
+      diag: {
+        triggerType: 'poll',
+        reason: 'not-exp-optimal',
+        optimalBiomeId: pollWeatherOpt.biomeId,
+        optimalBiomeName: pollWeatherOpt.biomeName,
+        optimalWeather: pollWeatherOpt.weatherId,
+        optimalXp: pollWeatherOpt.xp,
+      },
+    });
+    console.log('[AutoBoost] 每5分钟巡检：当前图非经验最优，不开增益。当前:', biomeId,
+      '| 经验最优·船可达最远:', pollWeatherOpt.biomeId, pollWeatherOpt.biomeName,
+      pollWeatherOpt.weatherId, 'x' + pollWeatherOpt.xp);
+    return;
+  }
   // 当前地图天气剩余（用于份数折算；不存在则交 handleAutoBoost 判 weather-too-short）
   const weatherEndsAt = cs.weather ? (cs.weather.endsAt || null) : null;
   const data = {
