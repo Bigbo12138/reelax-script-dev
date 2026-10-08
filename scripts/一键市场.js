@@ -550,6 +550,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     // 逐个拉盘口拿最低卖价，算出挂单价；若该鱼已有我的挂单，先下架旧单再以合并后的数量重挂
     // （串行 + 节奏控制，避免撞频率预算）
     const placed = [], skipped = [], failed = [], delisted = [];
+    let capacityHit = false; // 服务端返回「活动订单数量上限」→ 直接终止挂单
     for (let i = 0; i < candidates.length; i++) {
       const f = candidates[i];
       try {
@@ -620,6 +621,13 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
           const why = safeErr(sell.body, sell.error);
           failed.push({ f, why });
           log(`❌ ${f.name} 挂单失败: ${why}`);
+          // 服务端已拒：达到市场活动订单数量上限。说明本地计数/配置已失效（含装备/其它类型单），
+          // 继续挂必然同样被拒 → 直接终止本轮挂单，不浪费后续请求。
+          if (/已达到市场活动订单数量上限/.test(String(why))) {
+            log('⛔ 已达到市场活动订单数量上限，终止挂单');
+            capacityHit = true;
+            break;
+          }
         }
       } catch (e) {
         failed.push({ f, why: String(e) });
@@ -628,7 +636,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       await sleep(500); // 节奏控制：每单间隔，避免撞会话频率预算
     }
 
-    log(`—— 完成：成功 ${placed.length} / 下架旧单 ${delisted.length} / 跳过 ${skipped.length} / 失败 ${failed.length} ——`);
+    log(`—— 完成：成功 ${placed.length} / 下架旧单 ${delisted.length} / 跳过 ${skipped.length} / 失败 ${failed.length}${capacityHit ? '（已达市场活动订单上限，提前终止）' : ''} ——`);
   }
 
   // ================== 整合：最低价检测 + 一键下架非最低价 ==================
