@@ -4004,6 +4004,24 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
       switchPage('settings');
     });
 
+    // 页面重新可见时立即补检（防后台标签页定时器被节流/冻结导致长久休眠不切图）
+    // 证据：休眠期日志全停但手动点「检查」能立刻唤醒 → 定时器停摆而输入事件仍可达，
+    // 符合后台标签定时器节流特征。切回前台后马上快检一次，避免「很久不切、灰 idle」。
+    const rearmOnVisible = () => {
+      if (!state.autoSwitch) return;
+      // requestCheck 自带防并发：进行中会自动标记 checkPending、结束后补检
+      requestCheck({ fast: true });
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) rearmOnVisible();
+    });
+    window.addEventListener('focus', () => {
+      if (!document.hidden) rearmOnVisible();
+    });
+    window.addEventListener('pageshow', () => {
+      if (!document.hidden) rearmOnVisible();
+    });
+
     // 导出控制台日志（由 scripts/日志收集.js 提供）
     const exportLogBtn = document.getElementById('ramp-export-log');
     if (exportLogBtn) {
