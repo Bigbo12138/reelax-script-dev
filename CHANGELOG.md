@@ -4,6 +4,22 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.7.4] - 2026-10-10
+
+### 移除：游戏 API 403 后失效的 HTTP 直调回退路径
+- `scripts/聚合.js`：游戏端拒绝（403）旧的直连 HTTP 读取（`signedGet`/`apiWithTimeout` 拿 `/api/fishing/state`、`/api/party-boats/overview`、`/api/biomes` 等），原「快照失败→API 直调」回退分支已全部失效且会持续撞 403。现**直接移除整条回退**，全面改走游戏 API `getSnapshot()`（零 HTTP 内存快照）。
+  - 公会图腾 / 全局 buff / 智力 / 船队加成等（旧逻辑靠 403 的签名 HTTP 补充）改为缺省按 0——它们均为「全局或与地图无关」项，不影响地图间排序；有旧缓存则沿用（`_pbMaxPartyBonus`）。
+  - `fetchAllData`：`gameApiReady=false` 时直接抛「游戏 API 未就绪」由轮询重试，绝不再发注定 403 的 HTTP。
+
+### Bug 修复：硬刷新/SPA 水合导致 initGameApi 卡住、面板永不恢复
+- `scripts/聚合.js`：此前 `await initGameApi()` 在硬刷新/游戏 SPA 重新水合时可能因 `await gameApi.ready` 迟迟不 resolve，导致 `createUI` 永不执行、面板停在上次遗留的灰色 idle 且永不恢复。现改为先 `createUI()` 渲染面板并启动轮询，同时**不阻塞**地后台 `initGameApi()`。
+
+### Bug 修复：消除 createUI 首检与 initGameApi 的启动竞态
+- `scripts/聚合.js`：`createUI` 首检可能早于 `state.gameApi` 赋值，`fetchAllData` 现先做**有界等待**（`gameApiBoot` Promise，超时 15s），再等 `gameApi.getSnapshot()` 就绪，避免首轮因「未就绪」误失败。API 就绪后重排轮询为「游戏 API 可用时的最优间隔」并立即补检一次。
+
+### 改进：自动切换关闭时仍维持巡检
+- `scripts/聚合.js`：开关只控制「是否真正切图/开增益/换饵/开船」，**轮询巡检始终运行**（周期刷新地图数据供面板展示，拉取最新前端版本号）。`checkAndSwitch` 在 `autoSwitch=false` 时仅更新数据/计数、记录 `lastCheckStatus` 并贴「仅巡检」原因，不发任何有副作用的动作。切换间隔、页面回到可见、首查照常触发。
+
 ## [v1.7.3] - 2026-10-08
 
 ### Bug 修复：后台标签页定时器被节流冻结导致长时间不切图
