@@ -98,6 +98,11 @@
   ];
 
   // ==================== 状态 ====================
+  // 游戏API启动完成（state.gameApi 被赋值）的 Promise。createUI 的首检可能在 initGameApi
+  // 尚未同步赋值 state.gameApi 时就触发，故 fetchAllData 需先 await 它，避免首轮误失败。
+  let _resGameApiBoot = null;
+  const gameApiBoot = new Promise((res) => { _resGameApiBoot = res; });
+
   const state = {
     autoSwitch: true,
     isChecking: false,
@@ -179,6 +184,7 @@
     try {
       console.log('[AutoMap] 等待游戏API就绪...');
       state.gameApi = window.arcaneReelax;
+      if (_resGameApiBoot) { _resGameApiBoot(); _resGameApiBoot = null; }
       if (!state.gameApi) {
         console.warn('[AutoMap] window.arcaneReelax 不存在，将使用API直调模式');
         return false;
@@ -219,6 +225,12 @@
       });
       state.eventUnsubscribers.push(unsubGuildBoostEnd);
 
+      // API就绪后重排轮询：之前 createUI 已提前启动轮询（记为短间隔+HTTP直调），
+      // 这里重排为「游戏API可用时的最少60秒」间隔并立即触发一次检查。
+      if (state.autoSwitch) {
+        startPolling();
+        requestCheck({ fast: true });
+      }
       log('游戏API已连接，使用内存缓存模式', 'success');
       return true;
     } catch (e) {
@@ -708,8 +720,32 @@
   async function fetchAllData(fast) {
     console.log('[AutoMap] fetchAllData 开始...' + (fast ? '（快检模式）' : ''));
 
-    // 优先使用游戏API（从内存缓存读取，零HTTP请求）
-    if (state.gameApiReady && state.gameApi) {
+    // 优先使用游戏API（从内存缓存读取，零HTTP请求）。
+    // 游戏已 403 拒绝直连HTTP，游戏API 近乎必需。createUI 的首检可能早于 initGameApi 的
+    // state.gameApi 赋值，故先等 gameApiBoot（有界），随后再等其 ready，消除竞态误失败。
+    try {
+      await Promise.race([
+        gameApiBoot,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('等待游戏API启动超时')), 15000)),
+      ]);
+    } catch (e) {
+      console.warn('[AutoMap] 等待游戏API启动超时:', e.message);
+      // 允许使用随后可能赋值的 gameApi（若刚赋值）；仍无则走下方抛「未就绪」。
+    }
+
+    // 若 API 对象已出现但尚未就绪（initGameApi 同步赋值 gameApi、随后异步 await ready），
+    // 这里等待其就绪，避免与 initGameApi 竞态、首检因「未就绪」误失败。
+    if (state.gameApi) {
+      if (!state.gameApiReady || !state.gameApi.getSnapshot) {
+        const readyP = state.gameApi.ready || state.gameApi;
+        if (readyP && typeof readyP.then === 'function') {
+          await Promise.race([
+            readyP,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('等待游戏API就绪超时')), 15000)),
+          ]);
+          state.gameApiReady = true;
+        }
+      }
       try {
         const snapshot = state.gameApi.getSnapshot();
         if (!snapshot) {
@@ -754,63 +790,18 @@
         const serverTime = snapshot.serverTime || new Date().toISOString();
         updateClockDelta(serverTime);
 
-        // 公会图腾经验加成：快照的 fishing 是精简版（无 run.effects），补一次签名只读请求拿服务器算好的加成。
-        // 失败不影响主流程（图腾加成缺失时按 0 处理，所有地图一致，不影响排序）。
+        // 公会图腾经验加成：快照 fishing 为精简版，不含 run.effects/activeBuffs/stats。
+        // 游戏已 403 拒绝旧的直连HTTP(signedGet /api/fishing/state)，且快照字段也足够产生天气牌序——
+        // 图腾/buff/智力按 0 处理（均为「全局或与地图无关」，不影响地图间排序，只短暂影响倍率展示）。
         let guildTotemBasisPoints = null;
-        // 全局经验加成 buff（万流共鸣等）与智力 stat：也来自 /api/fishing/state（快照精简版无 stats/activeBuffs），
-        // 与公会图腾同源同上一次签名请求，解析失败按 0（全局，不影响地图间排序，只影响倍率显示）。
         let totalBuffBonus = 0;
         let intelStat = 0;
-        // 快检模式（fast，事件驱动）跳过此 HTTP：图腾/buff/智力均为「全局或与地图无关」，
-        // 不影响地图间排序，缺省按 0 不影响选对最优图（只短暂压低展示倍率，下次完整轮询即纠正）。
-        if (!fast) {
-          try {
-            const st = await signedGet('/api/fishing/state', 15000);
-            const effGuild = st && st.run && st.run.effects && st.run.effects.guild;
-            if (effGuild && typeof effGuild.experienceBonusBasisPoints === 'number') {
-              guildTotemBasisPoints = effGuild.experienceBonusBasisPoints;
-            }
-            if (Array.isArray(st && st.activeBuffs)) {
-              totalBuffBonus = st.activeBuffs
-                .filter(b => b && b.buffType === 'experience')
-                .reduce((s, b) => s + (Number(b.bonusBasisPoints) || 0), 0);
-            }
-            const is = st && st.run && st.run.stats && st.run.stats.intelligence;
-            if (typeof is === 'number') intelStat = is;
-          } catch (_) { /* 忽略，图腾/全局buff/智力缺省按 0 */ }
-        }
 
-        // 船队加成（跟船才有）：从 /api/party-boats/overview 的 catalog 按本船艇型查 maximumPartyBonusBasisPoints。
-        // 该加成仅作用于船队当前所在图（calcExpPriority 里再按 boatBiomeId 过滤），缺失按 0。
-        // 限频 30s：船型固定、加成基准不变，只需保证船图新鲜即可。
+        // 船队加成（跟船才有）：旧逻辑从 /api/party-boats/overview 取。游戏已 403 拒绝该直连HTTP，
+        // 且快照 party 不含艇型 catalog 加成与船员等级（木桶效应）。故沿用此前缓存过的加成（若有），
+        // 没有则按 0/未知——与旧「缺失按 0」一致，不影响地图间排序。
         let partyBonusBasisPoints = 0;
-        try {
-          if (Date.now() - (state._pbCacheAt || 0) > 30000) {
-            state._pbCacheAt = Date.now();
-            const pb = typeof signedGet === 'function' ? await signedGet('/api/party-boats/overview', 10000) : null;
-            const def = (pb && pb.party && pb.party.boatDefinitionId && pb.catalog || null)
-              ? (pb.catalog.find(c => c.id === pb.party.boatDefinitionId) || null) : null;
-            if (def && typeof def.maximumPartyBonusBasisPoints === 'number') {
-              state._pbMaxPartyBonus = def.maximumPartyBonusBasisPoints;
-            } else {
-              state._pbMaxPartyBonus = 0;
-            }
-            // 木桶效应：整船最远可到 = 等级最低船员可解锁的最高图（requiredLevel 门槛）。
-            // 与船队加成同一次 /api/party-boats/overview 响应解析（不额外发请求），缓存供贪婪模式选图过滤。
-            if (pb && pb.crew && Array.isArray(pb.crew.members) && pb.crew.members.length > 0) {
-              let lowest = Infinity;
-              for (const m of pb.crew.members) {
-                const lv = m && m.identity && typeof m.identity.level === 'number' ? m.identity.level : NaN;
-                if (Number.isFinite(lv) && lv < lowest) lowest = lv;
-              }
-              state.crewLowestLevel = Number.isFinite(lowest) ? lowest : null;
-              state.crewCount = pb.crew.members.length;
-            } else {
-              state.crewLowestLevel = null;
-            }
-          }
-if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._pbMaxPartyBonus;
-        } catch (_) { /* 加成缺失按 0 */ }
+        if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._pbMaxPartyBonus;
 
         return {
           biomes,
@@ -832,99 +823,13 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
           crewCount: state.crewCount,
         };
       } catch (e) {
-        console.warn('[AutoMap] 游戏API快照读取失败，回退到API直调:', e.message);
+        console.warn('[AutoMap] 游戏API快照读取失败:', e.message);
       }
     }
 
-    // 回退模式：API直调（兼容旧版本或API不可用时）
-    console.log('[AutoMap] 使用API直调模式');
-    const [biomesRes, sessionRes, fishingState, guildRes, masteryRes, baitsRes, talentsRes] = await Promise.all([
-      apiWithTimeout('/api/biomes', {}, 15000),
-      apiWithTimeout('/api/me', {}, 15000).catch(e => { console.warn('[AutoMap] /api/me 失败:', e.message); return null; }),
-      signedGet('/api/fishing/state', 15000).catch(e => { console.warn('[AutoMap] /api/fishing/state 失败:', e.message); return null; }),
-      apiWithTimeout('/api/guilds/me', {}, 15000).catch(e => { console.warn('[AutoMap] /api/guilds/me 失败:', e.message); return null; }),
-      apiWithTimeout('/api/mastery', {}, 15000).catch(e => { console.warn('[AutoMap] /api/mastery 失败:', e.message); return null; }),
-      apiWithTimeout('/api/baits', {}, 15000).catch(e => { console.warn('[AutoMap] /api/baits 失败:', e.message); return null; }),
-      apiWithTimeout('/api/mastery/talents', {}, 15000).catch(e => { console.warn('[AutoMap] /api/mastery/talents 失败:', e.message); return null; }),
-    ]);
-
-    const biomes = biomesRes?.biomes || [];
-    if (biomes.length === 0) {
-      throw new Error('地图数据为空，可能未登录或API返回异常');
-    }
-
-    const player = sessionRes?.player || sessionRes || {};
-    const serverTime = biomesRes?.serverTime || sessionRes?.serverTime || new Date().toISOString();
-
-    updateClockDelta(serverTime);
-
-    // 筛选已解锁的地图
-    const unlockedBiomes = biomes.filter(b => b.isUnlocked);
-    console.log('[AutoMap] 已解锁地图:', unlockedBiomes.map(b => `${b.id}(${b.name})`));
-
-    if (unlockedBiomes.length === 0) {
-      throw new Error('没有已解锁的地图');
-    }
-
-    // 并行获取每个已解锁地图的天气
-    const weatherEntries = await Promise.all(
-      unlockedBiomes.map(b =>
-        apiWithTimeout(`/api/weather?biomeId=${encodeURIComponent(b.id)}`, {}, 15000)
-          .then(w => ({ biomeId: b.id, weather: w }))
-          .catch(() => ({ biomeId: b.id, weather: null }))
-      )
-    );
-    const weatherMap = new Map(weatherEntries.map(e => [e.biomeId, e.weather]));
-
-    // 活跃经验buff (全局)
-    const activeExpBuffs = (fishingState?.activeBuffs || []).filter(b => b.buffType === 'experience');
-    const totalBuffBonus = activeExpBuffs.reduce((sum, b) => sum + (b.bonusBasisPoints || 0), 0);
-
-    // 天赋全局经验加成 (全局)
-    const talentsList = talentsRes?.talents || [];
-    const totalTalentBonus = talentsList.reduce((sum, t) => {
-      if (t.effectKind === 'global_xp_basis_points') return sum + (t.currentEffect || 0);
-      return sum;
-    }, 0);
-
-    // 获取当前鱼饵
-    const baitsList = baitsRes?.baits || [];
-    const selectedBait = baitsList.find(b => b.isSelected);
-    if (selectedBait) {
-      state.currentBaitId = selectedBait.id;
-    }
-
-    // 原始API直调模式不取组队信息，保持空
-    state.partyInfo = null;
-
-    return {
-      biomes,
-      unlockedBiomes,
-      player,
-      serverTime,
-      fishingState,
-      guild: guildRes,
-      // 公会图腾加成（服务器算好的，含图腾等级）：fishing-state 的 run.effects.guild
-      guildTotemBasisPoints: (fishingState && fishingState.run && fishingState.run.effects && fishingState.run.effects.guild
-        && typeof fishingState.run.effects.guild.experienceBonusBasisPoints === 'number')
-        ? fishingState.run.effects.guild.experienceBonusBasisPoints
-        : null,
-      mastery: masteryRes,
-      weatherMap,
-      totalBuffBonus,
-      totalTalentBonus,
-      intelStat: (fishingState && fishingState.run && fishingState.run.stats
-        && typeof fishingState.run.stats.intelligence === 'number')
-        ? fishingState.run.stats.intelligence
-        : 0,
-      baits: baitsList,
-      // 船队加成（跟船才有）：fishing-state 的 lastResult.partyBonusBasisPoints；缺失按 0
-      partyBonusBasisPoints: (fishingState && fishingState.lastResult
-        && typeof fishingState.lastResult.partyBonusBasisPoints === 'number')
-        ? fishingState.lastResult.partyBonusBasisPoints
-        : 0,
-      party: (fishingState && fishingState.party) || null,
-    };
+    // 游戏已 403 拒绝旧的直连HTTP(signedGet/apiWithTimeout) 读取，故不再存在可用回退路径。
+    // 若快照不可用（游戏API未就绪），直接抛「等待就绪」错误由轮询重试，绝不再发注定 403 的 HTTP。
+    throw new Error('游戏API未就绪，等待快照后自动重试');
   }
 
   // ==================== 经验加成计算 ====================
@@ -2335,6 +2240,18 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
       // [诊断] 记录每次选图决策：来源 / 目标 / 当前图 / 是否真的切换+推送
       console.log('[AutoMap][diag] current=' + currentBiome.id + ' best=' + (best ? (best.biome.id + '/' + best.reason + '/priority=' + best.priorityType + '/followBoat=' + !!best.followBoat + '/sail=' + !!best.sail + '/official=' + !!best.official) : 'NULL') + ' mapPriority=' + JSON.stringify(state.mapPriority));
 
+      // 自动切换关闭时：仅巡检不外发。仍已在上方填充 state.biomeDetails（地图列表），
+      // 故这里只需记录最优供展示，不触发任何切图/开增益/换饵/开船/推送等有副作用的动作。
+      if (!state.autoSwitch) {
+        state.bestBiomeId = best ? best.biome.id : null;
+        state.bestReason = best ? best.reason : '自动切换已关闭（仅巡检）';
+        state.lastCheckStatus = 'success';
+        updateStatusIndicator('success');
+        updateUI();
+        console.log('[AutoMap] 自动切换关闭，仅巡检更新数据，不切图');
+        return;
+      }
+
       // 聚合确定目标优选图 → 通知后台给该图开公会增益（仅按选图/切图逻辑触发；后台会检测已有增益防多开）
       if (best) notifyPreferredBoost(best, data);
 
@@ -2544,12 +2461,11 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
     const initialDelay = Math.floor(Math.random() * 30000);
     initialPollTimer = setTimeout(() => {
       initialPollTimer = null;
-      if (!state.autoSwitch) return; // 已在延时期间被手动关闭，不再执行
       checkAndSwitch();
 
       // 后续检查添加随机抖动（±15%），防止惊群效应
       pollTimer = setInterval(() => {
-        if (state.autoSwitch && !state.isChecking) {
+        if (!state.isChecking) {
           const jitter = effectiveInterval * (0.85 + Math.random() * 0.3);
           setTimeout(() => checkAndSwitch(), jitter - effectiveInterval);
         }
@@ -3940,10 +3856,11 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
       applyMinimized(true);
     }
 
-    // 如果之前开启了自动切换，恢复运行
+    // 始终启动轮询（周期性刷新地图数据/状态），不依赖自动切换开关——
+    // 与最原始版本的「一直自动检测」一致：开关只控制是否真正切图，不控制是否巡检。
+    console.log('[AutoMap] 启动轮询' + (state.autoSwitch ? '（自动切换开启）' : '（自动切换关闭，仅巡检不切图）'));
+    startPolling();
     if (state.autoSwitch) {
-      console.log('[AutoMap] 恢复自动切换状态');
-      startPolling();
       log('\u81ea\u52a8\u5207\u6362\u5df2\u6062\u590d', 'success');
     }
 
@@ -3981,6 +3898,12 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
     // 渲染鱼饵配置列表
     renderBaitList();
 
+    // 立即触发一次首查，保证刷新后面板第一时间出数据、状态不再停灰。
+    // 不依赖轮询的随机首延迟(0-30s)与游戏API就绪时序；requestCheck 自带防并发(进行中另置 checkPending)。
+    // 不要求 autoSwitch——即使自动切换关闭，也先拉一版数据供面板展示。
+    requestCheck({ fast: true });
+    console.log('[AutoMap] 已触发首查');
+
     // 应用可折叠区域状态
     applyCollapseState();
 
@@ -4008,8 +3931,8 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
     // 证据：休眠期日志全停但手动点「检查」能立刻唤醒 → 定时器停摆而输入事件仍可达，
     // 符合后台标签定时器节流特征。切回前台后马上快检一次，避免「很久不切、灰 idle」。
     const rearmOnVisible = () => {
-      if (!state.autoSwitch) return;
       // requestCheck 自带防并发：进行中会自动标记 checkPending、结束后补检
+      // 巡检/刷新始终进行（自动切换关闭时 checkAndSwitch 内仅更新数据、不切图）
       requestCheck({ fast: true });
     };
     document.addEventListener('visibilitychange', () => {
@@ -4035,15 +3958,14 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
       });
     }
 
-    // 开关
+    // 开关（切换是否真正切图；巡检/轮询始终运行，只关切图不关巡检）
     document.getElementById('ramp-switch').addEventListener('click', () => {
       state.autoSwitch = !state.autoSwitch;
       if (state.autoSwitch) {
         startPolling();
         log('\u81ea\u52a8\u5207\u6362\u5df2\u5f00\u542f', 'success');
       } else {
-        stopPolling();
-        log('\u81ea\u52a8\u5207\u6362\u5df2\u5173\u95ed', 'info');
+        log('\u81ea\u52a8\u5207\u6362\u5df2\u5173\u95ed\uff0c\u4ec5\u5de1\u68c0\u4e0d\u5207\u56fe', 'info');
       }
       saveState();
       updateUI();
@@ -4157,10 +4079,8 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
     document.getElementById('ramp-interval').addEventListener('change', (e) => {
       state.pollInterval = parseInt(e.target.value);
       saveState();
-      if (state.autoSwitch) {
-        startPolling();
-        log(`\u68c0\u67e5\u95f4\u9694\u5df2\u8c03\u6574\u4e3a ${state.pollInterval / 1000}\u79d2`, 'info');
-      }
+      startPolling();
+      log(`\u68c0\u67e5\u95f4\u9694\u5df2\u8c03\u6574\u4e3a ${state.pollInterval / 1000}\u79d2`, 'info');
     });
 
     // 手动检查
@@ -4865,14 +4785,18 @@ if (typeof state._pbMaxPartyBonus === 'number') partyBonusBasisPoints = state._p
     // 拉取最新前端版本号（填充 x-frontend-version 头，与线上保持一致）
     refreshFrontendVersion();
 
-    // 初始化游戏API（优先使用内存缓存，减少HTTP请求）
-    await initGameApi();
-
-    // 等待页面加载完成
+    // 先渲染面板并启动轮询（不阻塞于游戏API就绪），确保刷新后立即有检查与状态显示。
+    // 修复：initGameApi 里 await state.gameApi.ready 在硬刷新/游戏SPA重新水合时可能迟迟不
+    // resolve，导致 createUI 永不执行、面板停在上次遗留的灰色 idle 且永不恢复。
+    // fetchAllData 在 gameApiReady=false 时已自动回退 HTTP 直调，故 poll 先行是安全的。
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', createUI);
+      document.addEventListener('DOMContentLoaded', () => {
+        createUI();
+        initGameApi();
+      });
     } else {
       createUI();
+      initGameApi();
     }
   }
 
