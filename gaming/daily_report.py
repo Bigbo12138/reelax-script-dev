@@ -179,13 +179,19 @@ def compute_health(raw):
         return max(0.0, min(1.0, ratio))
 
     def s_online(raw):
-        # 在线率 = 有活动时长 / 期望时长（期望默认 24h 的 90%）
+        # 在线率 = 有活动时长 / 期望时长。
+        # 期望优先用显式 expectedActiveSec；缺省用「本日累计会话时长（activeSec+offlineSec）」，
+        # 即：只要整段挂机都在线就是满分，不再按刚性 24h 全日在场打分。
+        # 背景：早上（或任意时段）在线 8h 若按 24h×90%=19.44h 期望算仅得 8/19.44≈41 分被误扣，
+        # 实际应看「本次从 startedAt 起都挂着没掉线」。
         active = raw.get('activeSec')
-        expect = raw.get('expectedActiveSec')
         if active is None:
             return 1.0
+        expect = raw.get('expectedActiveSec')
         if expect is None or expect <= 0:
-            expect = 24 * 3600 * 0.9
+            offline = raw.get('offlineSec', 0)
+            elapsed_session = active + offline
+            expect = max(float(elapsed_session), 1.0) if elapsed_session > 0 else (24 * 3600 * 0.9)
         return max(0.0, min(1.0, active / expect))
 
     def s_refill(raw):

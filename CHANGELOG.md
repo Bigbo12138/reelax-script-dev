@@ -4,6 +4,15 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.7.5] - 2026-10-10
+
+### Bug 修复：日报「上钩净赚/今日累计」因 sync-hook 捕获冻结长期不准
+- `scripts/日报采集.js`：游戏改走 `window.arcaneReelax`（内存缓存）后，前端不再频繁 `window.fetch` 请求 `/api/fishing/sync|state`，被 sync-hook 捕获的 `dailyHarvest`（当日总杆数 / 上钩净赚）会**冻结在启动时的小值**（如初始几百杆），导致日报「上钩·净赚」长期不准。
+- 修复：新增 `refreshDailyHarvest()`，**每 300s 定时签名 GET `/api/fishing/state` 刷新 dailyHarvest**（带节流锁 `reelax_daily_dh_lock` 防并发），并写回今日档 / 推送桥。tick 里**优先采用 300s 内新鲜的 `dhCache`**；sync-hook 仅作兜底，且只有比 dhCache **更新（数值更大）** 时才覆盖，避免旧值回退。
+
+### Bug 修复：在线率误按「24h 全天在场」打分
+- `gaming/daily_report.py`：在线率期望缺省从「24h × 90%」改为优先取显式 `expectedActiveSec`；缺省改用「本日累计会话时长（activeSec+offlineSec）」，即整段挂机都保持在线即为满分，不再因早上在线 8h 却按全天 19.44h 期望被误扣为低分。
+
 ## [v1.7.4] - 2026-10-10
 
 ### 移除：游戏 API 403 后失效的 HTTP 直调回退路径

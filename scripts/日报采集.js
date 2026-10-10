@@ -134,6 +134,41 @@
     } catch (_) { return null; }
   }
 
+  // ---------- 每日累计（上杆/净赚）----------
+  // 根因：游戏改走 window.arcaneReelax（内存缓存）后，前端不再经 window.fetch 频繁发
+  // /api/fishing/sync|state，sync-hook 捕获的 dailyHarvest 会冻结在启动时的小值（如 460 杆），
+  // 导致日报「上杆/净赚」长期不准。故改为定时签名 GET /api/fishing/state 刷新 dailyHarvest，
+  // sync-hook 仅作无签名通道不可用时的兜底。
+  let dhCache = null;        // 最近一次签名 GET 解出的 {casts, netGold}
+  let dhCacheAt = 0;         // 上次刷新时间戳，节流（与 pity 同频 300s）
+
+  async function refreshDailyHarvest() {
+    const now = Date.now();
+    if (now - dhCacheAt < STAT_MS) return;   // 节流，与统计同频
+    const raw = sessionStorage.getItem('reelax_daily_dh_lock');
+    if (raw && (now - Number(raw)) < STAT_MS) return;
+    try { sessionStorage.setItem('reelax_daily_dh_lock', String(now)); } catch (_) {}
+    const r = await signedGet('/api/fishing/state');
+    let body = null;
+    if (r && r.ok && typeof r.body === 'string') { try { body = JSON.parse(r.body); } catch (_) {} }
+    if (!body || !body.dailyHarvest) { dwarn('dailyHarvest 刷新失败:', r && r.status); return; }
+    const h = body.dailyHarvest;
+    const casts = (typeof h.casts === 'number') ? h.casts : null;
+    const netGold = (typeof h.netGold === 'number') ? h.netGold : null;
+    if (casts === null && netGold === null) return;
+    dhCache = { casts, netGold };
+    dhCacheAt = Date.now();
+    const d = ensureToday();
+    let changed = false;
+    if (casts !== null && d.totalCasts !== casts) { d.totalCasts = casts; changed = true; }
+    if (netGold !== null && d.dailyNetGold !== netGold) { d.dailyNetGold = netGold; changed = true; }
+    if (changed) {
+      d.lastTickAt = Date.now();
+      lsSave(d);
+      pushToBridge(d);
+    }
+  }
+
   // 经 injector 的 __reelaxApiRequest 签名 GET 一个 /api/* 路径（页面上下文签名，不依赖 SW）
   function signedGet(path) {
     return new Promise((resolve) => {
@@ -329,14 +364,23 @@
     d.lastTickAt = now;
     lastTickAt = now;
 
-    // 杆数/金币
-    const h = readSyncHarvest();
-    if (h) {
-      if (h.totalCasts != null) d.totalCasts = h.totalCasts;
-      if (h.dailyNetGold != null) d.dailyNetGold = h.dailyNetGold;
+    // 杆数/金币：优先用最近签名 GET /api/fishing/state 刷新的 dailyHarvest（dhCache，300s 内新鲜，
+    // 规避游戏改走 arcaneReelax 后 sync-hook 捕获冻结导致的旧值覆盖）。sync-hook 仅兜底，且
+    // dailyHarvest 是当日累计只增不减，故只有在它比 dhCache 更新（更大）时才采用。
+    const nowH = Date.now();
+    const dhFresh = dhCache && (nowH - dhCacheAt) < STAT_MS * 1.5;
+    if (dhFresh) {
+      if (dhCache.casts != null) d.totalCasts = dhCache.casts;
+      if (dhCache.netGold != null) d.dailyNetGold = dhCache.netGold;
     } else {
-      // sync 暂不可用则保持在线计时（钓鱼页活着仍算在线）
-      lastActivityAt = Date.now();
+      const h = readSyncHarvest();
+      if (h) {
+        if (h.totalCasts != null && (dhCache == null || h.totalCasts >= dhCache.casts)) d.totalCasts = h.totalCasts;
+        if (h.dailyNetGold != null && (dhCache == null || h.dailyNetGold >= dhCache.netGold)) d.dailyNetGold = h.dailyNetGold;
+      } else {
+        // sync 暂不可用则保持在线计时（钓鱼页活着仍算在线）
+        lastActivityAt = Date.now();
+      }
     }
 
     lsSave(d);
@@ -377,8 +421,9 @@
     connectWs();
     setInterval(tick, TICK_MS);
     setInterval(refreshPityAndStats, STAT_MS);
+    setInterval(refreshDailyHarvest, STAT_MS);
     // 首轮立即做一次，尽早把今日档推给桥
-    setTimeout(() => { tick(); refreshPityAndStats(); }, 1000);
+    setTimeout(() => { tick(); refreshPityAndStats(); refreshDailyHarvest(); }, 1000);
   }
 
   window.__REELAX_DAILY__ = {
