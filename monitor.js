@@ -2109,9 +2109,31 @@ async function loadLevelStats() {
     const r = await browser.storage.local.get(LEVEL_HISTORY_KEY);
     const s = r && r[LEVEL_HISTORY_KEY];
     window.__levelStats = (s && typeof s === 'object') ? s : { byDate: {}, lastDate: null, lastLevel: null };
+    // 重启后立即把上次计算的昨日/今日提升回填到 m.sync，让弹窗无需等下一次 sync 即有值
+    if (window.__levelStats && window.__levelStats.lastDate) {
+      if (window.__levelStats.computedDate === levelBeijingDateKey()) {
+        // 仍是同一天：直接用持久化的提升值
+        writeLevelGainToSync(
+          window.__levelStats.byDate[window.__levelStats.lastDate] ?? null,
+          window.__levelStats.yesterdayGain ?? null,
+          window.__levelStats.todayGain ?? null
+        );
+      } else {
+        // 已跨天（SW 休眠跨越中午/次日）：重算昨日提升，避免用旧日快照
+        writeLevelGainToSync(null, window.__levelStats.yesterdayGain ?? null, null);
+      }
+    }
   } catch (_) {
     window.__levelStats = { byDate: {}, lastDate: null, lastLevel: null };
   }
+}
+
+// 把昨日/今日提升等级写入 m.sync（供弹窗渲染）；无 m.sync 时先建空档
+function writeLevelGainToSync(levelBaseToday, yesterdayGain, todayGain) {
+  if (!m.sync) m.sync = {};
+  m.sync.levelBaseToday = levelBaseToday ?? null;
+  m.sync.yesterdayLevelGain = yesterdayGain ?? null;
+  m.sync.todayLevelGain = todayGain ?? null;
 }
 
 // 等级记录 + 提升等级计算。levelNum 为当前等级（整数）。返回 null 表示无有效等级输入。
@@ -2141,8 +2163,16 @@ function recordLevelGain(levelNum) {
     todayGain,
     byDate: stats.byDate,
   };
-  // 持久化（防 SW 重启丢失昨日基准）
-  try { browser.storage.local.set({ [LEVEL_HISTORY_KEY]: { byDate: stats.byDate, lastDate: stats.lastDate, lastLevel: stats.lastLevel } }).catch(() => {}); } catch (_) {}
+  // 持久化（防 SW 重启丢失昨日基准 + 保留最后计算的提升值供重启后立即恢复显示）
+  const persistGo = {
+    byDate: stats.byDate,
+    lastDate: stats.lastDate,
+    lastLevel: stats.lastLevel,
+    computedDate: today,
+    yesterdayGain,
+    todayGain,
+  };
+  try { browser.storage.local.set({ [LEVEL_HISTORY_KEY]: persistGo }).catch(() => {}); } catch (_) {}
   return out;
 }
 
