@@ -417,6 +417,11 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg && msg.type === 'reelax-daily-raw' && msg.data) {
     return;
   }
+  // 每日等级提升历史：monitor 惰性跨天记录后直传桥写 data/level_history.json（供 Python 日报读取）
+  if (msg && msg.type === 'level-history' && msg.data) {
+    bridgeSend({ type: 'level-history', data: msg.data });
+    return;
+  }
   if (!msg || msg.type !== 'reelax-market-event' || !msg.data) return;
   const { type, data } = msg.data;
   // src 从 data.src 取(gear/fish)，或从 ev.assetType 兜底——不能从 type(=event) 判断

@@ -677,6 +677,28 @@ def _save_daily_raw(msg):
         return False
 
 
+def _save_level_history(msg):
+    """monitor 惰性跨天记录的每日等级提升历史 → 写 data/level_history.json（原子替换）。
+    gaming/daily_report.py 读取该文件计算并输出「昨日提升等级」。"""
+    try:
+        import os as _os
+        data = dict(msg).get('data') or msg
+        data = dict(data)
+        data.pop('type', None)
+        _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        p = _os.path.join(_root, 'data', 'level_history.json')
+        _os.makedirs(_os.path.dirname(p), exist_ok=True)
+        tmp = p + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        _os.replace(tmp, p)
+        print(f"[daily] 已写 level_history.json: date={data.get('date')} yesterdayGain={data.get('yesterdayGain')}")
+        return True
+    except Exception as e:
+        print('write level_history failed:', e)
+        return False
+
+
 async def _handle_conn(reader, writer):
     conn = WsConn(reader, writer)
     peer = writer.get_extra_info('peername')
@@ -732,6 +754,10 @@ async def _handle_conn(reader, writer):
             # 挂机日报：monitor → bridge → ws_bridge 写 data/daily_raw.json
             if isinstance(msg, dict) and msg.get("type") == "daily-report-raw":
                 _save_daily_raw(msg)
+                continue
+            # 每日等级提升历史：monitor → bridge → ws_bridge 写 data/level_history.json（供 Python 日报读取）
+            if isinstance(msg, dict) and msg.get("type") == "level-history":
+                _save_level_history(msg)
                 continue
             if not isinstance(msg, dict) or msg.get("id") is None:
                 continue

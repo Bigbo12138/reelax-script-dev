@@ -377,6 +377,18 @@ function renderSync() {
     if (expBar) expBar.style.width = '0';
   }
 
+  // 每日等级提升：昨日提升(S_基准−前一日基准) / 今日提升(当前−今日基准)
+  const ygEl = el('sy-yestergain');
+  const tgEl = el('sy-todaygain');
+  if (ygEl) {
+    ygEl.textContent = (s.yesterdayLevelGain != null)
+      ? `+${fmtNum(s.yesterdayLevelGain)} 级` : '—';
+  }
+  if (tgEl) {
+    tgEl.textContent = (s.todayLevelGain != null)
+      ? `+${fmtNum(s.todayLevelGain)} 级` : '—';
+  }
+
   // 公会税/毛收
   const taxEl = el('sy-tax');
   if (s.guildTax == null && s.directGoldGross == null) {

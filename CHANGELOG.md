@@ -6,6 +6,18 @@
 
 ## [v1.7.5] - 2026-10-10
 
+## [v1.8.0] - 2026-10-11
+
+### 新增：每日等级提升追踪（昨日提升 / 今日提升）
+- `monitor.js`：新增每日等级历史记录，惰性跨天检测（无需准点 00:00，每次 `fishing/sync` 拿到当前等级时比对北京时间日期；跨天自动把上一日最新观测等级固化为「昨日基准」并初始化「今日基准」）：
+  - `recordLevelGain()`：维护 `byDate`（逐日 00:00 基准等级）+ 昨日基准 + 今日基准；
+  - 「昨日提升等级」= 今日基准 − 昨日基准；「今日提升等级」= 当前等级 − 今日基准；
+  - 结果回填 `m.sync`（`yesterdayLevelGain` / `todayLevelGain` / `levelBaseToday`），持久化 `reelax_level_history`（SW 重启不丢），并经 `pushLevelStats()` 推桥写 `data/level_history.json`。
+- `bridge.js`：透传 `level-history` 消息到桥。
+- `devtools/ws_bridge.py`：新增 `level-history` 处理，写 `data/level_history.json`（原子替换）。
+- `gaming/daily_report.py`：读取 `level_history.json`，`report.levelProgression` 输出 `{date, currentLevel, yesterdayGain, todayGain, byDate}`；`webhookText` 增加「等级：当前 Lv… · 昨日 +N 级 · 今日 +N 级」行（扩展未推时优雅降级不展示）。
+- `popup.html` / `popup.js`：「游戏状态」→「升级进度」下方新增「昨日提升 / 今日提升」两行，分别展示 `+N 级`。
+
 ### Bug 修复：日报「上钩净赚/今日累计」因 sync-hook 捕获冻结长期不准
 - `scripts/日报采集.js`：游戏改走 `window.arcaneReelax`（内存缓存）后，前端不再频繁 `window.fetch` 请求 `/api/fishing/sync|state`，被 sync-hook 捕获的 `dailyHarvest`（当日总杆数 / 上钩净赚）会**冻结在启动时的小值**（如初始几百杆），导致日报「上钩·净赚」长期不准。
 - 修复：新增 `refreshDailyHarvest()`，**每 300s 定时签名 GET `/api/fishing/state` 刷新 dailyHarvest**（带节流锁 `reelax_daily_dh_lock` 防并发），并写回今日档 / 推送桥。tick 里**优先采用 300s 内新鲜的 `dhCache`**；sync-hook 仅作兜底，且只有比 dhCache **更新（数值更大）** 时才覆盖，避免旧值回退。

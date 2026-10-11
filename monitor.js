@@ -203,6 +203,7 @@ async function loadEnvWebhookUrl() {
 // ---------- 配置加载 ----------
 async function monitorLoadConfig() {
   try {
+    await loadLevelStats(); // 恢复每日等级提升历史（昨/今日基准），供弹窗与日报
     const cfg = await browser.storage.local.get(MONITOR_DEFAULTS);
     m.enabled = cfg.monitorEnabled !== false;
     m.offlineCheckMin = Number(cfg.offlineCheckMin) > 0 ? Number(cfg.offlineCheckMin) : MONITOR_DEFAULTS.offlineCheckMin;
@@ -2032,6 +2033,10 @@ function parseSync(raw) {
     exp: player.experience ?? null,
     expToNext: player.experienceToNextLevel ?? null,
     unspentStatPoints: player.unspentStatPoints ?? null,
+    // 每日等级提升追踪：yesterdayLevelGain=昨日提升(今日基准−昨日基准)，todayLevelGain=今日提升(当前−今日基准)
+    levelBaseToday: null,
+    yesterdayLevelGain: null,
+    todayLevelGain: null,
     lastResult: (last.gold != null || last.fishId) ? {
       kind: last.kind ?? null,
       fishId: last.fishId ?? null,
@@ -2053,6 +2058,21 @@ function parseSync(raw) {
 
   // 升级后不清空采样窗口：仅经验条上限变化，收益节奏不变，滑动窗口应沿用
 
+  // 每日等级提升：惰性跨天记录当前等级，回填昨日/今日提升等级（供弹窗与日报）
+  if (player.level != null) {
+    const lg = recordLevelGain(player.level);
+    if (lg) {
+      m.sync.levelBaseToday = lg.todayBase;
+      m.sync.yesterdayLevelGain = lg.yesterdayGain;
+      m.sync.todayLevelGain = lg.todayGain;
+      // 等级有实质变化或跨天才推桥（避免高频写盘）
+      if (m._lastLevelPushLevel !== player.level) {
+        m._lastLevelPushLevel = player.level;
+        pushLevelStats();
+      }
+    }
+  }
+
   // 累积最近一杆收益（环形缓冲）
   if (last.gold != null || last.experience != null) {
     m.sync.lastN.push({ exp: last.experience ?? 0, gold: last.gold ?? 0, ts: Date.now() });
@@ -2062,6 +2082,93 @@ function parseSync(raw) {
 
   // 有待分配属性点 → 触发自动加点（sync 补丁快速路径；定时查 stats 兜底）
   if (m.sync.unspentStatPoints > 0) setTimeout(() => autoAllocate(m.sync.unspentStatPoints), 0);
+}
+
+// ---- 每日等级提升追踪 ----
+// 需求：每天(北京时间)凌晨 00:00 记录一次「当前等级」，次日记录后与昨日凌晨等级相减得
+// 「昨日提升等级」，输出到日报；弹窗在「升级进度」下方显示「昨日提升等级」与「今日提升等级」。
+// 采用惰性跨天检测：无需准点 00:00，每次 sync 拿到当前等级时比对北京时间日期，
+// 跨天自动把上一日最新观测等级记为上一日基准，并初始化今日基准。
+const LEVEL_HISTORY_KEY = 'reelax_level_history';
+function levelBeijingDateKey() {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}`;
+}
+function beijingDateFromIndex(dateKey, deltaDays) {
+  // 由 'YYYYMMDD' 偏移天数得到北京时间该日 key（用于取「昨日」）
+  const y = +dateKey.slice(0, 4), mo = +dateKey.slice(4, 6) - 1, da = +dateKey.slice(6, 8);
+  const d = new Date(Date.UTC(y, mo, da) + deltaDays * 86400000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}`;
+}
+
+// 恢复等级历史（SW 重启后沿用既有 byDate，不因重启丢失昨日基准）
+async function loadLevelStats() {
+  try {
+    const r = await browser.storage.local.get(LEVEL_HISTORY_KEY);
+    const s = r && r[LEVEL_HISTORY_KEY];
+    window.__levelStats = (s && typeof s === 'object') ? s : { byDate: {}, lastDate: null, lastLevel: null };
+  } catch (_) {
+    window.__levelStats = { byDate: {}, lastDate: null, lastLevel: null };
+  }
+}
+
+// 等级记录 + 提升等级计算。levelNum 为当前等级（整数）。返回 null 表示无有效等级输入。
+function recordLevelGain(levelNum) {
+  if (levelNum == null || !Number.isFinite(+levelNum)) return null;
+  levelNum = Math.floor(+levelNum);
+  const stats = window.__levelStats || (window.__levelStats = { byDate: {}, lastDate: null, lastLevel: null });
+  const today = levelBeijingDateKey();
+  const prevDate = stats.lastDate;
+  if (prevDate !== null && prevDate !== today) {
+    // 跨天：把上一日最新观测等级固化为上一日基准（若该日尚未记录）
+    if (stats.byDate[prevDate] == null) stats.byDate[prevDate] = stats.lastLevel;
+  }
+  // 今日基准：当天首次观测的等级即当日 00:00 基准（近似）
+  if (stats.byDate[today] == null) stats.byDate[today] = levelNum;
+  stats.lastDate = today;
+  stats.lastLevel = levelNum;
+  // 昨日提升 = 今日基准 − 昨日基准；今日提升 = 当前 − 今日基准
+  const todayBase = stats.byDate[today];
+  const yDate = beijingDateFromIndex(today, -1);
+  const yBase = stats.byDate[yDate];
+  const yesterdayGain = (todayBase != null && yBase != null) ? (todayBase - yBase) : null;
+  const todayGain = (todayBase != null) ? (levelNum - todayBase) : null;
+  const out = {
+    todayBase,
+    yesterdayGain,
+    todayGain,
+    byDate: stats.byDate,
+  };
+  // 持久化（防 SW 重启丢失昨日基准）
+  try { browser.storage.local.set({ [LEVEL_HISTORY_KEY]: { byDate: stats.byDate, lastDate: stats.lastDate, lastLevel: stats.lastLevel } }).catch(() => {}); } catch (_) {}
+  return out;
+}
+
+// 把等级提升结果推给桥，写 data/level_history.json（供 Python 日报读取）
+function pushLevelStats() {
+  const stats = window.__levelStats;
+  if (!stats || !stats.lastDate) return;
+  const today = stats.lastDate;
+  const todayBase = stats.byDate[today];
+  const yDate = beijingDateFromIndex(today, -1);
+  const yBase = stats.byDate[yDate];
+  const payload = {
+    type: 'level-history',
+    data: {
+      date: today,
+      todayBase: todayBase ?? null,
+      yesterdayDate: yDate,
+      yesterdayBase: yBase ?? null,
+      lastLevel: stats.lastLevel ?? null,
+      yesterdayGain: (todayBase != null && yBase != null) ? (todayBase - yBase) : null,
+      todayGain: (todayBase != null && stats.lastLevel != null) ? (stats.lastLevel - todayBase) : null,
+      byDate: stats.byDate || {},
+      updatedAt: Date.now(),
+    },
+  };
+  try { browser.runtime.sendMessage(payload).catch(() => {}); } catch (_) {}
 }
 
 // 升到下一级所需经验公式（游戏固定公式）：floor(100 + 29.0908424 × level^1.5614014)

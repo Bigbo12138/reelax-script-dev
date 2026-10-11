@@ -409,6 +409,16 @@ def _fmt_hhmm(sec):
     return ('%d时%d分' % (h, r)) if h else ('%d分' % r)
 
 
+def _load_level_history():
+    """读扩展 monitor 惰性跨天记录的每日等级提升历史（data/level_history.json）。
+    若缺失（扩展未推 / 桥未运行）返回空 dict，日报对等级提升部分优雅降级为不展示。"""
+    for p in (os.path.join(DATA_DIR, 'level_history.json'),):
+        d = _load_json(p)
+        if isinstance(d, dict) and ('date' in d or 'yesterdayGain' in d):
+            return d
+    return {}
+
+
 def _build_webhook_text(report, health, europe, raw):
     s = report['summary']
     rare = s.get('rareCatches') or {}
@@ -421,6 +431,20 @@ def _build_webhook_text(report, health, europe, raw):
         ]
     if europe and europe.get('index') is not None:
         line.append('欧非指数：%s（%s）' % (europe['index'], europe.get('note', '')))
+    lp = report.get('levelProgression') or {}
+    if lp and (lp.get('yesterdayGain') is not None or lp.get('currentLevel') is not None):
+        parts = []
+        cur = lp.get('currentLevel')
+        if cur is not None:
+            parts.append('当前 Lv%d' % cur)
+        yg = lp.get('yesterdayGain')
+        if yg is not None:
+            parts.append('昨日 +%d 级' % yg)
+        tg = lp.get('todayGain')
+        if tg is not None:
+            parts.append('今日 +%d 级' % tg)
+        if parts:
+            line.append('等级：' + ' · '.join(parts))
     return '\n'.join(line)
 
 
@@ -465,11 +489,24 @@ def gen_report(raw=None, player=None, date_str=None):
     cast_analysis = compute_cast_analysis(raw, player)
     grade, grade_note = health_grade(health['total'])
 
+    # 每日等级提升：读 monitor 惰性跨天记录的等级历史（data/level_history.json）
+    lh = _load_level_history()
+    level_progression = None
+    if lh:
+        level_progression = {
+            'date': lh.get('date'),
+            'currentLevel': lh.get('todayBase'),           # 当日 00:00 基准等级（近似当日零点等级）
+            'yesterdayGain': lh.get('yesterdayGain'),      # 昨日提升等级（今日基准−昨日基准）
+            'todayGain': lh.get('todayGain'),              # 今日提升等级（当前−今日基准）
+            'byDate': lh.get('byDate') or {},
+        }
+
     report = {
         'date': date_str,
         'generatedAt': datetime.now().isoformat(timespec='seconds'),
         'player': {'name': player.get('name') or '', 'luck': player.get('luck'),
                    'strength': player.get('strength'), 'intelligence': player.get('intelligence')},
+        'levelProgression': level_progression,
         'health': health,
         'healthGrade': grade,
         'healthNote': grade_note,
