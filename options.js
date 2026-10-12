@@ -17,6 +17,7 @@ const TOGGLEABLE_SCRIPTS = [
   { file: '以物易物价格.js', label: '以物易物价格（交换列表卡片显示市场最低价，点更新价格才会查询）' },
   { file: '装备属性占比.js', label: '装备属性占比（装备详情四维数值后显示各属性占总和百分比）' },
   { file: '装备初始价显示.js', label: '装备初始价显示（装备市场卡片上方显示 售价-强化累计 差价）' },
+  { file: '交换填单助手.js',   label: '交换填单助手（鱼换鱼：跨图组单自动发布交换单，含自动循环）' },
 ];
 const ALL_SCRIPTS = MANDATORY_SCRIPTS.concat(TOGGLEABLE_SCRIPTS.map((s) => s.file));
 
@@ -24,7 +25,7 @@ const DEFAULTS = {
   targetUrl: 'https://reelax.cn/',
   autoOpenOnStartup: true,
   scriptFiles: [],
-  enabledScripts: ['日志收集.js', '自动登录.js', '聚合.js', '自动补满次数.js', '自动加点.js', '保底显示.js', '一键市场.js', '装备属性占比.js'], // 启用的脚本（含强制+可选）；自动出售库存.js 默认关闭（页面版已失效）
+  enabledScripts: ['日志收集.js', '自动登录.js', '聚合.js', '自动补满次数.js', '自动加点.js', '保底显示.js', '一键市场.js', '装备属性占比.js', '交换填单助手.js'], // 启用的脚本（含强制+可选）；自动出售库存.js 默认关闭（页面版已失效）
   customCode: '',
   autoRefreshMin: 0,
   bridgePort: 55004,

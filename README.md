@@ -60,7 +60,7 @@ scripts/
     ├─ market_events.js # 市场 SSE 行情采集汇总
     ├─ sync-hook.js     # document_start 同步采集钩子（写 sessionStorage + postMessage）
     ├─ 自动出售库存.js / 自动补满次数.js / 自动登录.js / 自动加点.js（已废弃）/ 日志收集.js
-    └─ 保底显示.js / 装备初始价显示.js / 装备属性占比.js / 以物易物价格.js 等注入脚本
+    └─ 保底显示.js / 装备初始价显示.js / 装备属性占比.js / 以物易物价格.js / 交换填单助手.js 等注入脚本
 devtools/               # 纯标准库 Python 工具：api.py / ws_bridge.py / rdp_query.py / market.py / guild_stats.py / sign.js
 api/                    # API 逆向与收益分析：api.md / fish_economy.py / history_economy.py / gear_advisor.py
 ```

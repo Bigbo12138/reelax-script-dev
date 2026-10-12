@@ -10,7 +10,7 @@
   'use strict';
 
   const CORE_SCRIPTS = ['日志收集.js', '自动登录.js', '聚合.js', '日报采集.js']; // 强制脚本：始终注入（日志收集 / 自动登录 / 聚合主脚本 / 日报采集页版本）
-  const ALL_SCRIPTS = ['日志收集.js', '自动登录.js', '聚合.js', '自动出售库存.js', '自动加点.js', '自动补满次数.js', '保底显示.js', '一键市场.js', '装备属性占比.js', '装备初始价显示.js', '以物易物价格.js']; // 可注入全集（含可选脚本）；market_events.js 已取消注入（游戏 SSE 不可用）; sync-hook.js 由 manifest 以 world:'MAIN' 注入
+  const ALL_SCRIPTS = ['日志收集.js', '自动登录.js', '聚合.js', '自动出售库存.js', '自动加点.js', '自动补满次数.js', '保底显示.js', '一键市场.js', '装备属性占比.js', '装备初始价显示.js', '以物易物价格.js', '交换填单助手.js']; // 可注入全集（含可选脚本）；market_events.js 已取消注入（游戏 SSE 不可用）; sync-hook.js 由 manifest 以 world:'MAIN' 注入
 
   // 登录凭据运行期配置：run.sh 依据环境变量 FISH_EMAIL / FISH_PASSWD（或 --login 参数）
   // 生成 scripts/login_credentials.js。此文件先于自动登录.js 注入主世界，供其读取；

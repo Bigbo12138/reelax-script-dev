@@ -19,6 +19,7 @@ description: Reelax 钓鱼游戏浏览器脚本开发与运维技能。当用户
 | `scripts/自动补满次数.js` | 独立版杆数/次数补满 | `[Reelax 自动补满]` |
 | `scripts/自动登录.js` | 自动登录 | `[Reelax 自动登录]` |
 | `scripts/日志收集.js` | 收集页面 console 日志写文件 | `[Reelax 日志]` |
+| `scripts/交换填单助手.js` | 鱼换鱼交换单助手（由外部独立脚本合并）：跨图配单自动发布交换单（汇总各图专精缺口与多余鱼组单，每单 5收+5给，给鱼图号 ≤ 想收最低图号+3），支持下架旧单/自动循环 | `[Reelax 交换]` |
 | ~~`scripts/自动增益.js`~~ | ~~已移除~~（不再注入；开增益改由 聚合.js 的「优选地图」通知驱动） | — |
 | `bridge.js` | **Python 桥**：background 脚本，**WebSocket 持久连接**（ws://127.0.0.1:55004，断线自动重连 + 15s 心跳），收 Python 下发任务、在扩展上下文签名请求 reelax.cn、回传结果；附带登录保活探测 | — |
 | `monitor.js` | **扩展监控**（后台统一接管在线检测）：webRequest 监听 fishing/sync|state 心跳 + proof 自动验证（30s `/api/me` 主动 + 响应头被动捕获）+ 掉线/登录失效时刷新标签页 + **自动加点**（签名调 `/api/player/stats/allocate`）+ **自动加专精**（每 10 分钟 `/api/mastery/{mapId}/contribute-all`）+ **自动开公会增益**（由聚合优选地图通知驱动，见下）+ **保底监控**（定时签名查 `/api/statistics` 的 pity 字段，奥秘/奇异出货、软保底满、逼近硬保底时 webhook 通知）+ **统一 webhook 通知**（掉线/登录失效/加点/页面切图） | `[monitor]` |
