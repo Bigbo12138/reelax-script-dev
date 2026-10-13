@@ -3139,10 +3139,14 @@ function gearWatchDetailText(o) {
     return `${cn} ${base[k]}`;
   }).join(' / ');
   const stars = gear.qualityStars ? '★'.repeat(Math.max(1, Number(gear.qualityStars) || 1)) : '';
+  const rar = encodeURIComponent(gear.rarity || '');
+  const slot = encodeURIComponent(gear.slot || '');
+  const marketUrl = `https://reelax.cn/market?gearRarities=${rar}&gearSlot=${slot}&gearSort=price&market=gear`;
   return `${gear.name || '未知装备'}(${gear.rarity || '?'}·${gearSlotCN(gear.slot)})`
     + ` 品质${gear.quality || 0} ${stars} 强化+${gear.upgradeLevel || 0}`
     + `\n价格 ${formatGearGold(o.limitUnitPrice)} · ${statStr}`
-    + (o.ownerNickname ? `\n卖家 ${o.ownerNickname}` : '');
+    + (o.ownerNickname ? `\n卖家 ${o.ownerNickname}` : '')
+    + `\n[点击查看购买](${marketUrl})`;
 }
 
 // 按品级组的查询条件翻页拉取「整个市场」该品级的全部卖单（nextCursor 翻页）。
@@ -3161,6 +3165,7 @@ async function fetchAllGearWatchOrders(q) {
       res = await ReelaxApi.marketOrders({
         assetType: 'gear', side: 'sell',
         rarities: q.rarity ? [q.rarity] : undefined,
+        slot: q.slot || undefined,
         maxPrice: q.maxPrice || undefined,
         sort: 'price', direction: 'asc',
         limit: GEAR_WATCH_PAGE_LIMIT,
@@ -3193,42 +3198,50 @@ async function checkGearWatch() {
     const rules = (Array.isArray(m.gearWatchRules) ? m.gearWatchRules : []).filter((r) => r.rarity || (r.slots && r.slots.length) || r.maxPrice || r.minQuality || r.minUpgrade);
     if (!rules.length) { m.gearWatch = { ok: true, scanned: 0, hits: 0, checkedAt: Date.now(), at: Date.now() }; return; }
 
-    // ---- 合并优化：按「品级」分组，每组翻页拉「整个市场」，再在本地按各条收紧过滤 ----
-    // 服务端只下推 rarity / maxPrice；品质/强化不下推（高品值如 99/100 的服务端筛选不可靠），
-    // 拉全量后本地兜底。maxPrice：任一需求单不限价则整组不下推（此时靠页数上限兜底），否则取组内最大值。
-    const groups = new Map(); // key: rarity → { rules:[{rule,maxPrice,minQuality,minUpgrade}], query:{rarity,maxPrice} }
+    // ---- 合并优化：按「品级 × 部位 × 价格档」分组翻页拉市场，再在本地按各条收紧过滤 ----
+    // 服务端可下推 rarity / slot / maxPrice；品质/强化不下推（高品值如 99/100 的服务端筛选不可靠），
+    // 故本地仍保留部位/品质/强化兜底过滤。
+    // 三档拆分，避免出现抓取窗口截断或扫到无关品级：
+    //   1) 部位：需求单「恰好指定一个部位」→ 服务端下推 slot，只翻该部位（如 exotic·戒指），数据量最小；
+    //      多重部位 / 不限部位 → 不传 slot，按整品级抓取，本地再筛部位。
+    //   2) 价格档：同一抓取桶内只要有一条「不限价」需求单，就会从最便宜翻到最贵；一旦该桶低价单超过
+    //      页数上限(50×100=5000)，售价接近上限的目标会被窗口截断 → 永不命中。故把「有上限」和
+    //      「不限价」拆开：限价桶用最大价做服务端 maxPrice 下推，保证有上限目标一定落在窗口内。
+    //   3) 品级：只对配置里实际出现的品级建桶，绝不触碰未配置的品级。
+    const fetchKey = (r, sl, cap) => r + '|' + sl + '|' + (cap ? '1' : '0');
+    const buckets = new Map(); // key: rarity|slot|cap → { rarity, slot, maxPrice, items:[] }
     for (const rule of rules) {
       const rarity = String(rule.rarity || '').trim();
+      const slots = (Array.isArray(rule.slots) ? rule.slots : []).filter(Boolean);
+      const slot = slots.length === 1 ? slots[0] : ''; // 恰一个部位 → 服务端下推；多重/不限 → 空
       const maxPrice = Number(rule.maxPrice) > 0 ? Number(rule.maxPrice) : 0; // 0=不限
       const minQuality = Number(rule.minQuality) > 0 ? Number(rule.minQuality) : 0;
       const minUpgrade = Number(rule.minUpgrade) > 0 ? Number(rule.minUpgrade) : 0;
-      if (!groups.has(rarity)) groups.set(rarity, { rarity, rules: [] });
-      groups.get(rarity).rules.push({ rule, maxPrice, minQuality, minUpgrade });
+      const item = { rule, maxPrice, minQuality, minUpgrade, slot };
+      const cap = maxPrice > 0 ? 1 : 0; // 限价/不限价分桶
+      const key = fetchKey(rarity, slot, cap);
+      let b = buckets.get(key);
+      if (!b) { b = { rarity, slot, maxPrice, items: [] }; buckets.set(key, b); }
+      b.items.push(item);
+      if (maxPrice > b.maxPrice) b.maxPrice = maxPrice; // 同一限价桶内取最大价下推
     }
-    for (const g of groups.values()) {
-      let mp = 0;
-      for (const it of g.rules) {
-        if (it.maxPrice === 0) { mp = 0; break; } // 任一单不限价 → 整组不下推
-        if (it.maxPrice > mp) mp = it.maxPrice;
-      }
-      g.query = { rarity: g.rarity, maxPrice: mp };
-    }
+    const fetchPlan = Array.from(buckets.values());
 
     const allHits = [];
     let scannedTotal = 0;
-    for (const g of groups.values()) {
-      // 翻页拉取该品级整个市场的卖单（sort=price&asc，失败带已拉数量，便于 popup 排查）
-      const fetched = await fetchAllGearWatchOrders(g.query);
+    for (const plan of fetchPlan) {
+      // 翻页拉取该档位卖单（sort=price&asc，失败带已拉数量，便于 popup 排查）
+      const fetched = await fetchAllGearWatchOrders(plan);
       scannedTotal += fetched.orders.length;
       if (fetched.failed) {
         m.gearWatch = { ok: false, reason: fetched.reason, scanned: scannedTotal, checkedAt: Date.now(), at: Date.now() };
         return;
       }
-      // 对拉回的每条订单，分别用组内每条需求单的收紧条件过滤
+      // 对拉回的每条订单，用本档位内每条需求单的收紧条件过滤
       for (const o of fetched.orders) {
         if (o.isOwnOrder) continue;
         const gear = (o.asset && o.asset.gear) || {};
-        for (const item of g.rules) {
+        for (const item of plan.items) {
           const slots = (Array.isArray(item.rule.slots) ? item.rule.slots : []).filter(Boolean);
           if (slots.length && !slots.includes(gear.slot)) continue;
           if (!gear.quality || (item.minQuality && gear.quality < item.minQuality)) continue;
