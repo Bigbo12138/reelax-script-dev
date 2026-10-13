@@ -144,7 +144,6 @@
     useNewScoring: true,       // 优选评分算法开关：true=新算法(倍率×天气鱼系数，0.55/0.45)；false=旧算法(编号即金币，0.6/0.4，含雷暴独立优先级)
     useOfficialRoute: false,   // 官方航线开关（默认关）：开启后把官方 routeAssistant.travel() 服务端推荐的目标图纳入选图优先级
     expPriorityIncludePartyBonus: true, // 经验优选是否计入船队加成（跟船才加成；仅对船队当前所在图计入，参与图间排序）
-    expPriorityIncludeMapLevel: false,  // 经验优选是否计入「地图号位经验」可调倍率（无官方明确字段，默认关；开启后按地图号位乘一个可选倍率）
     expGreedyMode: false,       // 经验优选贪婪模式（默认关）：经验优选只看「专精×天气」选图，开增益最多1份；船也在该图时仍按原开增益模式
     officialRoute: null,       // 官方航线服务端规划缓存 { targetBiomeId, status, reason, executeAt, reevaluateAt, serverTime, fetchedAt }（仅内存）
     lastTravelAttempt: null,  // 同一目标切图/开船重试冷却 {biomeId, at}
@@ -266,7 +265,6 @@
         useNewScoring: state.useNewScoring,
         useOfficialRoute: state.useOfficialRoute,
         expPriorityIncludePartyBonus: state.expPriorityIncludePartyBonus,
-        expPriorityIncludeMapLevel: state.expPriorityIncludeMapLevel,
         expGreedyMode: state.expGreedyMode,
       }));
     } catch (_) { /* 忽略存储错误 */ }
@@ -286,7 +284,7 @@
       state.autoCheckIn = parsed.autoCheckIn != null ? !!parsed.autoCheckIn : true;
       // 迁移旧数据：确保mapPriority包含所有选项（赛事>跟船>雷暴>优选）
       // 【修复】完全尊重用户在 UI 里排定的顺序，不再强制置顶 official/competition/followboat。
-      const allPriorityOptions = ['competition', 'followboat', 'official', 'tempest', 'optimal', 'experience'];
+      const allPriorityOptions = ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
       if (Array.isArray(parsed.mapPriority)) {
         state.mapPriority = parsed.mapPriority.filter(p => allPriorityOptions.includes(p));
         // 补全缺失的选项(追加到末尾)
@@ -320,14 +318,13 @@
       state.useNewScoring = parsed.useNewScoring !== false;
       state.useOfficialRoute = parsed.useOfficialRoute === true; // 默认关（未保存过/历史数据视为关）
       state.expPriorityIncludePartyBonus = parsed.expPriorityIncludePartyBonus !== false;
-      state.expPriorityIncludeMapLevel = parsed.expPriorityIncludeMapLevel === true;
       state.expGreedyMode = parsed.expGreedyMode === true;
       // 按当前算法归一化优先级链【修复：保留用户顺序，仅剔除当前算法不允许的类型、补足缺失】：
       // 新算法 -> 允许 赛事/跟船/官方/新优选（剔除 tempest）；旧算法 -> 额外允许 雷暴(tempest)。经验优选(experience)两种算法均可。
       // 不做任何强制置顶——优先级顺序完全以用户在 UI 中排列的为准。
       const fullChain = state.useNewScoring
-        ? ['competition', 'followboat', 'official', 'optimal', 'experience']
-        : ['competition', 'followboat', 'official', 'tempest', 'optimal', 'experience'];
+        ? ['competition', 'followboat', 'official', 'goldwind', 'optimal', 'experience']
+        : ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
       // 保留用户实际顺序，只去掉当前算法不允许的类型
       state.mapPriority = state.mapPriority.filter(p => fullChain.includes(p));
       // 补足当前算法允许但用户未保留的类型（追加到末尾，不影响已有顺序）
@@ -931,11 +928,10 @@
 
   // ==================== 经验优选评分（experience 优先级专用） ====================
   // 参考 dip.js / 上游 calculateTotalExpBonus：纯经验乘算（不混金币）：
-  //   天气 × 地图专精 × 公会区域 × 公会图腾 × buff/天赋 × 智力stat × 船队加成 × (可选)地图号位倍率
+  //   天气 × 地图专精 × 公会区域 × 公会图腾 × buff/天赋 × 智力stat × 船队加成
   // 区别于 calculateExpBonus(优选)：
   //   · 专精点不再被 excludeMasteryInSelect 剔除（用户明确要求经验优选取入地图专精）；
-  //   · 额外计入船队加成 partyBonusBasisPoints（跟船才有；仅对船队当前所在图计入，从而参与图间排序）；
-  //   · 可选按地图号位乘一个经验倍率（expPriorityIncludeMapLevel，默认关，因无官方明确字段）。
+  //   · 额外计入船队加成 partyBonusBasisPoints（跟船才有；仅对船队当前所在图计入，从而参与图间排序）。
   //   · 贪婪模式(expGreedyMode)：只看「专精×天气」两项，忽略船加成/图腾/天赋/buff/智力/图序——选真正的
   //     基础最优图，避免船图因船加成虚高而与更好基础图抢选；开增益份数受控见 handleAutoBoost(greedy)。
   //     仅当本图天气「够开至少 1 份增益(剩余≥30分且可解析)」才用贪婪评分，否则退回下方完整评分。
@@ -951,7 +947,7 @@
   }
 
   function calculateExpPriority(biome, data) {
-    const breakdown = { weather: 0, mastery: 0, guildBoost: 0, guildTotem: 0, talents: 0, buffs: 0, party: 0, mapLevel: 0, intel: 0 };
+    const breakdown = { weather: 0, mastery: 0, guildBoost: 0, guildTotem: 0, talents: 0, buffs: 0, party: 0, intel: 0 };
 
     // 天气 (per-biome)：由 weatherId 查静态表（与 calculateExpBonus 一致）
     const weatherRes = data.weatherMap && data.weatherMap.get(biome.id);
@@ -976,9 +972,13 @@
       if (mb) breakdown.mastery = mb.xpBonusBasisPoints || 0;
     }
 
+    // 船长/舵手开着自动开船时两项经验优选设置锁定失效（见 expSettingsLocked）
+    const expLocked = expSettingsLocked();
+
     // 贪婪模式（经验优选）：只看「专精×天气」两项，仅对本图天气够开至少1份增益(≥30分)的图生效，
     // 早退返回，忽略船加成/图腾/天赋/buff/智力/图序，避免船图高加成虚抬而与更好的基础图抢选。
-    if (state.expGreedyMode && canOpenBoostUnit(weatherEndsAt)) {
+    // 接船场景强制失效：经验优选已改走「船可达 + 天气经验最高 + 同分选编号最大」逻辑，贪婪模式不得再介入。
+    if (state.expGreedyMode && !expLocked && canOpenBoostUnit(weatherEndsAt)) {
       const greedyMultiplier = (1 + breakdown.weather / 10000) * (1 + breakdown.mastery / 10000);
       const total = Math.round((greedyMultiplier - 1) * 10000);
       return { multiplier: greedyMultiplier, total, breakdown, greedy: true };
@@ -1012,16 +1012,11 @@
     // 船队加成 (跟船才有)：仅对「船队当前所在图」计入 —— 人跟着船，船在哪个图该图才吃到 party 加成，
     // 从而真正拉开图间差异，让经验优选取更合算的船队所在图（如 b010 有船队加成、b008 无），
     // 而非像之前那样当作全局常量只抬人均总额、被基础倍率左右而漏选船队所在的高经验图。
-    if (state.expPriorityIncludePartyBonus && data && typeof data.partyBonusBasisPoints === 'number' && data.partyBonusBasisPoints > 0) {
+    if (state.expPriorityIncludePartyBonus && !expLocked && data && typeof data.partyBonusBasisPoints === 'number' && data.partyBonusBasisPoints > 0) {
       const boatBiomeId = (data.party && data.party.boatBiomeId) || (state.partyInfo && state.partyInfo.boatBiomeId);
       if (boatBiomeId && boatBiomeId === biome.id) {
         breakdown.party = data.partyBonusBasisPoints;
       }
-    }
-
-    // 地图号位经验倍率（可选，默认关）：把 valueMultiplier 当经验倍率用（无官方明确经验字段，做成开关）
-    if (state.expPriorityIncludeMapLevel) {
-      breakdown.mapLevel = Math.round((getBiomeValueMultiplier(biome.id, (data && data.biomes)) - 1) * 10000);
     }
 
     // 乘算总倍率（基点倍）：multiplier 表示「最终经验 = 基础 × multiplier」
@@ -1032,8 +1027,7 @@
       * (1 + breakdown.talents / 10000)
       * (1 + breakdown.buffs / 10000)
       * (1 + breakdown.party / 10000)
-      * (1 + breakdown.intel / 10000)
-      * (1 + breakdown.mapLevel / 10000);
+      * (1 + breakdown.intel / 10000);
     const total = Math.round((multiplier - 1) * 10000);
     return { multiplier, total, breakdown };
   }
@@ -1398,16 +1392,20 @@
     // 经验优选：纯经验乘算排序（见 calculateExpPriority），只挑经验加成最大的已解锁图。
     // 返回结构与 pickOptimal 一致，priorityType='experience'。
     function pickExperience() {
-      // 贪婪模式木桶范围：只看「整船船员都能到」的图。
+      // 木桶范围（船可达）：只看「整船船员都能到」的图。
       // 船上最远可到 = 等级最低船员能解锁的最高图（requiredLevel 门槛）。从中剔除更高门槛的图，
-      // 避免贪婪选出一张船根本开不过去（如最低船员 6179 级、b_013 要 7250 级时不能选 b_013）。
-      // 仅贪婪模式应用此过滤（正常经验优选仍按原逻辑，给非开船场景完整选择空间）。
+      // 避免选出一张船根本开不过去（如最低船员 6179 级、b_013 要 7250 级时不能选 b_013）。
+      // 应用场景：经验优选贪婪模式（expGreedyMode），或「船长/舵手开着自动开船」（autoSail 且你是船长或舵手）
+      // 时——后者即便开着贪婪也按船可达选图，保证整船开得过去。
+      const party = data.party;
+      const isCrew = !!(party && party.isInParty && (party.role === 'captain' || party.role === 'helmsman'));
+      const boatReachFilter = (state.expGreedyMode === true) || (state.autoSail === true && isCrew);
       let candidates = (unlockedBiomes || []).map(b => ({
         biome: b,
         exp: calculateExpPriority(b, data),
         index: biomes.findIndex(bi => bi.id === b.id),
       }));
-      if (state.expGreedyMode && typeof data.crewLowestLevel === 'number' && data.crewLowestLevel > 0) {
+      if (boatReachFilter && typeof data.crewLowestLevel === 'number' && data.crewLowestLevel > 0) {
         const reachableCandidates = candidates.filter(c => {
           const rl = c.biome.requiredLevel;
           // 无 requiredLevel 字段（个别快照形态）时视为可达，不误伤
@@ -1419,9 +1417,11 @@
         }
       }
       if (candidates.length === 0) return null;
-      // 经验倍率降序；同分按地图编号升序（越靠前越早解锁/越基础，稳定不飘）
+      // 经验倍率降序；同分时：船长/舵手开船场景选地图编号最大的图（越靠后金币产出门槛越高），
+      // 其余场景按地图编号升序（越靠前越早解锁/越基础，稳定不飘）
+      const tieAsc = !(state.autoSail === true && isCrew);
       const ranked = candidates.sort((a, b) =>
-        (b.exp.multiplier - a.exp.multiplier) || (a.index - b.index));
+        (b.exp.multiplier - a.exp.multiplier) || (tieAsc ? (a.index - b.index) : (b.index - a.index)));
       const best = ranked[0];
       return {
         biome: best.biome,
@@ -1473,6 +1473,7 @@
       if (priority === 'followboat') return pickFollowBoat();
       if (priority === 'official') return state.useOfficialRoute ? pickOfficialRoute() : null;
       if (priority === 'tempest') return pickByWeather('tempest', 'tempest', '雷暴地图');
+      if (priority === 'goldwind') return pickByWeather('gilded_current', 'goldwind', '金风地图');
       if (priority === 'optimal') return pickOptimal();
       if (priority === 'experience') return pickExperience();
       return null;
@@ -1482,6 +1483,8 @@
     // 新算法(useNewScoring) = 赛事 > 跟船 > 新优选（统一评分，tempest 已并入优选）
     // 旧算法            = 赛事 > 跟船 > 雷暴 > 优选（编号即金币评分）
     for (const priority of state.mapPriority) {
+      // 船长/舵手 + 自动开船时「跟随船」已从优先级列表隐藏（见 renderPriorityList），这里同步跳过
+      if (expSettingsLocked() && priority === 'followboat') continue;
       const result = pickByPriority(priority);
       if (result) return result;
     }
@@ -3167,6 +3170,14 @@
         #reelax-auto-map-panel .ramp-switch input:checked + .ramp-switch-track::after {
           transform: translateX(16px);
         }
+        #reelax-auto-map-panel .ramp-option-row.disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
+          filter: grayscale(0.6);
+        }
+        #reelax-auto-map-panel .ramp-option-row.disabled .ramp-option-desc {
+          color: ${colors.textDim};
+        }
         /* Form fields */
         #reelax-auto-map-panel .ramp-field { display: block; margin-top: 12px; }
         #reelax-auto-map-panel .ramp-field-label {
@@ -3680,17 +3691,6 @@
             </span>
           </div>
 
-          <div class="ramp-option-row" id="ramp-option-row-expmaplvl">
-            <span class="ramp-option-text">
-              <span>经验优选·计地图号位</span>
-              <div class="ramp-option-desc">经验优选额外按地图号位乘一个经验倍率（无官方明确字段，默认关）</div>
-            </span>
-            <span class="ramp-switch" id="ramp-expmaplvl-switch">
-              <input type="checkbox" role="switch" aria-label="经验优选计地图号位">
-              <span class="ramp-switch-track"></span>
-            </span>
-          </div>
-
           <div class="ramp-option-row" id="ramp-option-row-expgreedy">
             <span class="ramp-option-text">
               <span>经验优选·贪婪模式</span>
@@ -4000,8 +4000,8 @@
       state.useNewScoring = !state.useNewScoring;
       // 切换算法后按当前算法归一化优先级链（新算法移除 tempest，旧算法加入 tempest）——【修复：保留用户顺序，不重置默认】
       const fullChain = state.useNewScoring
-        ? ['competition', 'followboat', 'official', 'optimal', 'experience']
-        : ['competition', 'followboat', 'official', 'tempest', 'optimal', 'experience'];
+        ? ['competition', 'followboat', 'official', 'goldwind', 'optimal', 'experience']
+        : ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
       state.mapPriority = state.mapPriority.filter(p => fullChain.includes(p));
       for (const p of fullChain) { if (!state.mapPriority.includes(p)) state.mapPriority.push(p); }
       if (state.useNewScoring) {
@@ -4030,22 +4030,24 @@
 
     // 经验优选·计船队加成开关
     document.getElementById('ramp-expparty-switch').addEventListener('click', () => {
+      if (expSettingsLocked()) {
+        log('船长/舵手开着自动开船时经验优选计入船队加成为锁定项，不生效', 'warn');
+        updateUI();
+        return;
+      }
       state.expPriorityIncludePartyBonus = !state.expPriorityIncludePartyBonus;
       log(state.expPriorityIncludePartyBonus ? '经验优选已计入船队加成（跟船才加成）' : '经验优选不计船队加成', state.expPriorityIncludePartyBonus ? 'success' : 'info');
       saveState();
       updateUI();
     });
 
-    // 经验优选·计地图号位开关
-    document.getElementById('ramp-expmaplvl-switch').addEventListener('click', () => {
-      state.expPriorityIncludeMapLevel = !state.expPriorityIncludeMapLevel;
-      log(state.expPriorityIncludeMapLevel ? '经验优选已计入地图号位经验倍率' : '经验优选不计地图号位经验倍率', state.expPriorityIncludeMapLevel ? 'success' : 'info');
-      saveState();
-      updateUI();
-    });
-
     // 经验优选贪婪模式开关
     document.getElementById('ramp-expgreedy-switch').addEventListener('click', () => {
+      if (expSettingsLocked()) {
+        log('船长/舵手开着自动开船时经验优选贪婪模式为锁定项，不生效', 'warn');
+        updateUI();
+        return;
+      }
       state.expGreedyMode = !state.expGreedyMode;
       log(state.expGreedyMode ? '经验优选贪婪模式已开启：只按专精×天气选图，增益最多1份' : '经验优选贪婪模式已关闭', state.expGreedyMode ? 'success' : 'info');
       saveState();
@@ -4330,9 +4332,18 @@
     return (basisPoints > 0 ? '+' : '') + pct + '%';
   }
 
+  // 船长/舵手开着自动开船时，经验优选按第3条需求强制只看「天气经验最高 + 船可达」，因此
+  // 「计船队加成(expPriorityIncludePartyBonus)」与「贪婪模式(expGreedyMode)」两开关置灰失效，避免与接船逻辑冲突。
+  function expSettingsLocked() {
+    const p = state.partyInfo;
+    return state.autoSail === true
+      && !!(p && p.isInParty && (p.role === 'captain' || p.role === 'helmsman'));
+  }
+
   function updateUI() {
     updateStatusUI();
     updateDetailUI();
+    renderPriorityList();
     renderBaitList();
   }
 
@@ -4354,12 +4365,28 @@
     setSwitchChecked('ramp-newscoring-switch', state.useNewScoring);
     setSwitchChecked('ramp-official-switch', state.useOfficialRoute);
     setSwitchChecked('ramp-expparty-switch', state.expPriorityIncludePartyBonus);
-    setSwitchChecked('ramp-expmaplvl-switch', state.expPriorityIncludeMapLevel);
     setSwitchChecked('ramp-expgreedy-switch', state.expGreedyMode);
     setSwitchChecked('ramp-refill-switch', state.autoRefill);
     setSwitchChecked('ramp-dismiss-switch', state.autoDismissCompetition);
     setSwitchChecked('ramp-checkin-switch', state.autoCheckIn);
     setSwitchChecked('ramp-offline-switch', state.autoDismissOffline);
+
+    // 经验优选两项开关随「船长/舵手 + 自动开船」置灰失效
+    const setExpLocked = (switchId, rowId, lock) => {
+      const wrapper = document.getElementById(switchId);
+      if (wrapper) {
+        const input = wrapper.querySelector('input[type="checkbox"]');
+        if (input) input.disabled = lock;
+      }
+      const row = document.getElementById(rowId);
+      if (row) {
+        if (lock) row.classList.add('disabled');
+        else row.classList.remove('disabled');
+      }
+    };
+    const expLocked = expSettingsLocked();
+    setExpLocked('ramp-expparty-switch', 'ramp-option-row-expparty', expLocked);
+    setExpLocked('ramp-expgreedy-switch', 'ramp-option-row-expgreedy', expLocked);
 
     let html = '';
 
@@ -4634,15 +4661,19 @@
   function renderPriorityList() {
     const el = document.getElementById('ramp-priority-list');
     if (!el) return;
+    // 船长/舵手 + 自动开船时「跟随船」无意义（自己就是船），从优先级列表隐藏（不删 state，解除后恢复）
+    const hideFollowBoat = expSettingsLocked();
     let html = '';
-    const total = state.mapPriority.length;
+    let rank = 0;
     state.mapPriority.forEach((key, i) => {
-      const canUp = i > 0;
-      const canDown = i < total - 1;
+      if (hideFollowBoat && key === 'followboat') return; // 隐藏项不渲染，也不占位
+      rank++;
+      const canUp = rank > 1;
+      const canDown = rank < state.mapPriority.length - (hideFollowBoat ? 1 : 0);
       const label = key === 'optimal' ? getOptimalLabel() : (PRIORITY_LABELS[key] || key);
       html += `
         <div class="ramp-priority-item" data-priority="${key}">
-          <span class="ramp-priority-rank">${i + 1}</span>
+          <span class="ramp-priority-rank">${rank}</span>
           <span class="ramp-priority-label">${label}</span>
           <div class="ramp-priority-btns">
             <button class="ramp-priority-btn" data-action="up" data-index="${i}" ${canUp ? '' : 'disabled'} title="上移">↑</button>
