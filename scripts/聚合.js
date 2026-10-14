@@ -2092,6 +2092,13 @@
   // 始终预取（无论官方航线开关是否开启），失败/不可用时清空缓存，不影响其他优先级。
   // 是否参与选图由 pickByPriority('official') 里的 useOfficialRoute 控制，与显示解耦。
   async function prefetchOfficialRoute() {
+    // 官方航线关闭时一律不预取：routeAssistant.travel() 是「会真正执行换图」的副作用接口，
+    // 若仍每轮调用会让服务端把船/人拉回其规划图（如 b_004），与脚本自身的选图打架（见切图确认失败）。
+    // 展示与选图都依赖 state.officialRoute，故关闭时直接置空即可。
+    if (!state.useOfficialRoute) {
+      state.officialRoute = null;
+      return null;
+    }
     if (!(state.gameApiReady && state.gameApi && state.gameApi.routeAssistant
         && typeof state.gameApi.routeAssistant.travel === 'function')) {
       state.officialRoute = null;
@@ -2241,7 +2248,7 @@
       const best = findBestBiome(data);
 
       // [诊断] 记录每次选图决策：来源 / 目标 / 当前图 / 是否真的切换+推送
-      console.log('[AutoMap][diag] current=' + currentBiome.id + ' best=' + (best ? (best.biome.id + '/' + best.reason + '/priority=' + best.priorityType + '/followBoat=' + !!best.followBoat + '/sail=' + !!best.sail + '/official=' + !!best.official) : 'NULL') + ' mapPriority=' + JSON.stringify(state.mapPriority));
+      console.log('[AutoMap][diag] current=' + currentBiome.id + ' best=' + (best ? (best.biome.id + '/' + best.reason + '/priority=' + best.priorityType + '/followBoat=' + !!best.followBoat + '/sail=' + !!best.sail + '/official=' + !!best.official) : 'NULL') + ' boat=' + ((data.party && data.party.isInParty) ? data.party.boatBiomeId : '单人') + ' mapPriority=' + JSON.stringify(state.mapPriority));
 
       // 自动切换关闭时：仅巡检不外发。仍已在上方填充 state.biomeDetails（地图列表），
       // 故这里只需记录最优供展示，不触发任何切图/开增益/换饵/开船/推送等有副作用的动作。
