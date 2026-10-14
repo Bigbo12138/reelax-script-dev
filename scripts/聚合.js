@@ -1628,7 +1628,7 @@
           return mode === 'party'
             ? (s.party && s.party.boatBiomeId === targetId)
             : (s.currentBiomeId === targetId);
-        }, 6000, 500);
+        }, mode === 'party' ? 15000 : 6000, 500);
         if (ok) {
           console.log('[AutoMap] 切图确认成功:', targetId);
           return;
