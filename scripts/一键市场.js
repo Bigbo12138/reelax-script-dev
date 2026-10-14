@@ -97,6 +97,22 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
   // ---------- 捡漏结果持久化（localStorage，缓存 30 分钟；关窗重开不丢，超时清空） ----------
   const BARGAIN_CACHE_KEY = 'r1cm-bargain-cache';
   const BARGAIN_CACHE_TTL = 30 * 60 * 1000;
+  // 专精鱼 fishId 集合持久化（localStorage）。捡漏恢复时本地秒读即可标 * / 「仅拉取专精鱼」，
+  // 不必等 /api/mastery 网络往返，也不因该请求失败而丢失专精鱼标记。
+  const MASTERY_CACHE_KEY = 'r1cm-mastery-fish';
+  const MASTERY_CACHE_TTL = 30 * 60 * 1000;
+  function saveMasteryIds(ids) {
+    try { localStorage.setItem(MASTERY_CACHE_KEY, JSON.stringify({ ts: Date.now(), ids: Array.isArray(ids) ? ids : [] })); } catch (_e) {}
+  }
+  // 返回 Set 或 null
+  function loadMasteryIds() {
+    try {
+      const o = JSON.parse(localStorage.getItem(MASTERY_CACHE_KEY) || 'null');
+      if (!o || typeof o !== 'object' || !Array.isArray(o.ids) || o.ids.length === 0) return null;
+      if (Date.now() - o.ts > MASTERY_CACHE_TTL) return null;
+      return new Set(o.ids);
+    } catch (_e) { return null; }
+  }
   // ---------- 捡漏筛选/勾选控件持久化（localStorage，关窗重开恢复） ----------
   const BARGAIN_CFG_KEY = 'r1cm-bargain-cfg';
   function saveBargainCfg() {
@@ -160,18 +176,18 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     }
     return { ok: all.length > 0 || !firstErr, orders: all, raw: all, error: firstErr ? firstErr.error : undefined, body: firstErr ? firstErr.body : undefined };
   }
-  function saveBargainCache(rarity, sorted) {
+  function saveBargainCache(rarity, sorted, myBuyIds) {
     try {
-      localStorage.setItem(BARGAIN_CACHE_KEY, JSON.stringify({ ts: Date.now(), rarity: rarity, rows: sorted }));
+      localStorage.setItem(BARGAIN_CACHE_KEY, JSON.stringify({ ts: Date.now(), rarity: rarity, rows: sorted, myBuyIds: myBuyIds }));
     } catch (_e) {}
   }
-  // 返回 { rarity, rows }（未过期）或 null
+  // 返回 { rarity, rows, myBuyIds }（未过期）或 null
   function loadBargainCache() {
     try {
       const o = JSON.parse(localStorage.getItem(BARGAIN_CACHE_KEY) || 'null');
       if (!o || typeof o !== 'object' || !Array.isArray(o.rows)) return null;
       if (Date.now() - o.ts > BARGAIN_CACHE_TTL) return null; // 超时视为无缓存
-      return { rarity: o.rarity, rows: o.rows };
+      return { rarity: o.rarity, rows: o.rows, myBuyIds: (Array.isArray(o.myBuyIds) ? o.myBuyIds : null) };
     } catch (_e) { return null; }
   }
 
@@ -1655,11 +1671,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       console.log(TAG, '专精鱼(地图专精页全部目标鱼) count=' + s.size);
       _masteryFish = s;
       _masteryTs = Date.now();
+      saveMasteryIds(Array.from(s)); // 同时持久化，供下次捡漏恢复本地秒读
       return s;
     }
     // 专精数据获取失败：不要缓存空集合（否则会持续 5 分钟把「专精鱼」误判为空 → 误报「该条件下没有专精鱼」）。
-    // 已有缓存则沿用；否则返回 null 让调用方区分「无数据」与「确实没有专精鱼」。
+    // 优先用本会话缓存，其次用 localStorage 持久化缓存；都无则返回 null 让调用方区分「无数据」与「确实没有专精鱼」。
     if (_masteryFish) return _masteryFish;
+    const lc = loadMasteryIds();
+    if (lc) { _masteryFish = lc; _masteryTs = Date.now(); return lc; }
     console.warn(TAG, '专精数据获取失败(免签/超时), 无缓存可用');
     return null;
   }
@@ -1745,10 +1764,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
           s.add(o.asset.fish.fishId);
         }
       }
+      _myBuyFish = s;
+      _myBuyFishTs = Date.now();
+      return s;
     }
-    _myBuyFish = s;
-    _myBuyFishTs = Date.now();
-    return s;
+    // 拉取失败：返回 null 以区分「确实没有求购单」与「网络/超时失败」，
+    // 避免调用方用空集合把已持久化的「已求」标记误清空。
+    console.warn(TAG, '我的求购单拉取失败，返回 null（不更新已求标记）');
+    return null;
   }
 
   async function onBargainStart() {
@@ -1772,7 +1795,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const mset = await masteryFishIds(); // 专精鱼 fishId 集合（标 *）；获取失败时可能为 null
     // 专精鱼当前等级映射（供渲染显示专精等级）
     const lvlMap = await masteryLevelMap();
-    const myBuy = await myActiveBuyFishIds();
+    const myBuy = (await myActiveBuyFishIds()) || new Set();
     if (onlyMastery && mset === null) {
       if (st) st.textContent = '⚠️ 专精数据获取失败，无法筛选专精鱼（请重试）';
       return;
@@ -1877,7 +1900,12 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       if (q.ok) {
         sorted.push({ ...t, ask: q.ask, bid: q.bid });
         renderBargainList();
-        saveBargainCache(rarity, sorted);
+saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
+      } else {
+        // 报价失败/暂无盘口（ok:false）：不丢弃该鱼类目。仍是合法鱼种（来自 fishpedia），
+        // 可能只是暂时限流或该鱼暂无在售。保留条目、价格按「无数据」显示，否则物种数会静默变少。
+        sorted.push({ ...t, ask: null, bid: null });
+        renderBargainList();
       }
       done++;
       if (q.ok) { successes++; failsInRow = 0; }
@@ -1898,7 +1926,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     }
 
     if (st) st.textContent = `${done}/${targets.length} ｜ 在售 ${sorted.length} 种`;
-    saveBargainCache(rarity, sorted);
+    saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
     if (!sorted.length && listBox) listBox.innerHTML = '<div style="color:#aaa;padding:6px;">该稀有度暂无鱼在售</div>';
   }
 
@@ -2064,11 +2092,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (!listBox) return;
     const rarity = cache.rarity;
     const rarityName = objBargainRarityName(rarity);
-    const mset = await masteryFishIds(); // 标 * 用
-    const lvlMap = await masteryLevelMap();
-    const myBuy = await myActiveBuyFishIds();
     const sorted = cache.rows;
     const checkedBoxes = new Set();
+    // 立即渲染：先用本地可同步拿到的数据（持久化专精集合）秒出列表，避免被 3 个网络请求拖慢。
+    // 随后各份网络数据就绪后再重渲染一次补齐 * / LV / 已求标记。
+    let mset = loadMasteryIds(); // 优先本地（瞬读）；无则由下方异步拉取后补
+    let lvlMap = new Map();
+    // 用扫描时持久化的「我的求购」集合秒标「已求」（避免一次网络失败就丢标）；后台再刷新
+    let myBuy = new Set(Array.isArray(cache.myBuyIds) ? cache.myBuyIds : []);
     const render = () => {
       const useBid = el('rlb-tab-usebid') ? el('rlb-tab-usebid').checked : false;
       // 「仅拉取专精鱼」为视图层筛选，从不改动 sorted（已恢复的单子可直接切换筛/放回）
@@ -2128,8 +2159,21 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     };
     bargainState = { sorted: sorted, checked: checkedBoxes, render: render, masterySet: mset };
     if (el('rlb-tab-rarity')) el('rlb-tab-rarity').value = rarity;
-    render();
+    render(); // 先秒出本地缓存列表（含持久化的专精 *）
     if (st) st.textContent = `已恢复上次扫描：共 ${sorted.length} 种「${rarityName}」鱼（30 分钟内有效）`;
+    // 后台异步补齐最新数据：专精集合 / 专精等级 / 我的求购，就绪后再重渲染一次（不阻塞列表显示）
+    (async () => {
+      const [fmset, fmap, fbuy] = await Promise.all([
+        masteryFishIds(),
+        masteryLevelMap(),
+        myActiveBuyFishIds(),
+      ]);
+      if (fmset) mset = fmset;
+      if (fmap) lvlMap = fmap;
+      if (fbuy) myBuy = fbuy;
+      bargainState.masterySet = mset;
+      render();
+    })();
   }
 
   // 批量发布求购单：对勾选的鱼，按「最高求购价(无求购则0) + X 元」作为求购单价发布买单一笔（数量 1）
