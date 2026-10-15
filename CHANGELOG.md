@@ -4,6 +4,13 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.11.4] - 2026-10-13
+
+### 优化：一键市场·鱼种改为硬编码表（不再每次拉 fishpedia）
+- `scripts/一键市场.js`：`ensureAllFish()` **不再每次调 `/api/fishpedia`**——鱼种已硬编码为 `const HARD_FISH`（共 **990** 项 `[fishId, name]`，覆盖 b_001–b_015 × 9 稀有度）：捡漏扫鱼因此**不发任何 HTTP 请求、面板秒出**，并修复此前每次拉 fishpedia 因瞬时失败导致品种漏采的 bug（如奥秘仅显示 ~40 种）。`biomeId`/`rarity`/`mapTag` 由 `parseFishId` 从 `fishId` 推导。
+- `devtools/collect_fish.py`（新增）：采集脚本，经 WS 桥签名请求 `/api/fishpedia` 生成 `HARD_FISH` 数组（`-o` 可直接写文件），供游戏新增/改名/删除鱼种时重新生成整表。
+- `SKILL.md`：新增「一键市场.js 的鱼种硬编码表（HARD_FISH）」维护说明与重生成步骤；注明鱼种数据必须来自 `/api/fishpedia` 采集、禁止占位臆造（记录曾误植 b_020/秘海 示例被 990 项真实数据覆盖的教训）。
+
 ## [v1.11.3] - 2026-10-13
 
 ### 优化：一键市场·捡漏恢复提速与网络失败兜底

@@ -20,6 +20,7 @@ description: Reelax 钓鱼游戏浏览器脚本开发与运维技能。当用户
 | `scripts/自动登录.js` | 自动登录 | `[Reelax 自动登录]` |
 | `scripts/日志收集.js` | 收集页面 console 日志写文件 | `[Reelax 日志]` |
 | `scripts/交换填单助手.js` | 鱼换鱼交换单助手（由外部独立脚本合并）：跨图配单自动发布交换单（汇总各图专精缺口与多余鱼组单，每单 5收+5给，给鱼图号 ≤ 想收最低图号+3），支持下架旧单/自动循环 | `[Reelax 交换]` |
+| `scripts/一键市场.js` | 市场捡漏（按稀有度扫各鱼最低价升序列出/自动挂着捡漏）+ 专精鱼标记 + 已求购标记。**鱼种用硬编码 `HARD_FISH`（见第 4 节维护说明），不再拉 fishpedia** | `[Reelax 捡漏]` |
 | ~~`scripts/自动增益.js`~~ | ~~已移除~~（不再注入；开增益改由 聚合.js 的「优选地图」通知驱动） | — |
 | `bridge.js` | **Python 桥**：background 脚本，**WebSocket 持久连接**（ws://127.0.0.1:55004，断线自动重连 + 15s 心跳），收 Python 下发任务、在扩展上下文签名请求 reelax.cn、回传结果；附带登录保活探测 | — |
 | `monitor.js` | **扩展监控**（后台统一接管在线检测）：webRequest 监听 fishing/sync|state 心跳 + proof 自动验证（30s `/api/me` 主动 + 响应头被动捕获）+ 掉线/登录失效时刷新标签页 + **自动加点**（签名调 `/api/player/stats/allocate`）+ **自动加专精**（每 10 分钟 `/api/mastery/{mapId}/contribute-all`）+ **自动开公会增益**（由聚合优选地图通知驱动，见下）+ **保底监控**（定时签名查 `/api/statistics` 的 pity 字段，奥秘/奇异出货、软保底满、逼近硬保底时 webhook 通知）+ **统一 webhook 通知**（掉线/登录失效/加点/页面切图） | `[monitor]` |
@@ -295,6 +296,26 @@ python3 api/gear_advisor.py --me-file /tmp/me.json --loadouts-file /tmp/lo.json 
 - 时间字段（`rentalEndsAt` 等）用 `formatCNTime()`（上海时区）展示；比较用 `new Date(x).getTime()`。
 - 改 `manifest.json`（如权限/background 脚本）后 web-ext 会**热加载**扩展，无需重启 Firefox；但新加的 storage 配置项首次使用前要确认 `options.js` 的 `DEFAULTS` 已包含。
 - **扩展脚本与 Python 桥改动的对应关系**：改 `bridge.js`/`sign.js`/manifest → web-ext 热加载；改 `api.py`/`ws_bridge.py` → 重启 `api.py serve`（或直接跑单次命令）即可；改消息协议（`_forward` 的 `{id,method,path,body}` 格式）要 `bridge.js` 和 `ws_bridge.py` 两边一起改。
+
+### 一键市场.js 的鱼种硬编码表（HARD_FISH）
+
+`scripts/一键市场.js` 的 `ensureAllFish()` **不再每次拉 `/api/fishpedia`**——鱼种已硬编码为 `const HARD_FISH`（共 **990** 项 `[fishId, name]`，覆盖 15 张图 b_001–b_015 × 9 稀有度：common 180 / uncommon 150 / fine 120 / rare 120 / epic 120 / legendary 75 / mythic 75 / exotic 75 / arcane 75）。`biomeId`/`rarity`/`mapTag` 由 `parseFishId(fishId)` 从 fishId 推导，无需额外字段。
+
+- **作用**：捡漏扫鱼不再发任何 HTTP 请求 → 面板秒出、稳定（此前每次拉 fishpedia 会因瞬时失败导致品种漏采，奥秘只显示 ~40 种）。
+- **range 不大，一般不动**：游戏鱼种几乎不更新。仅当游戏**新增/改名/删除鱼种**时才需重生成。
+
+**重生成步骤**（新增/改名鱼种时）：
+1. 先起桥（见「WS 桥教程」：`python3 devtools/api.py serve`），并打开已登录游戏页（桥签名请求依赖可注入的游戏页）。
+2. 跑采集脚本（落到 `.../scripts/一键市场.js` 的位置由 `-o` 控制，默认打印 JSON）：
+   ```bash
+   python3 devtools/collect_fish.py         # 已存在则直接用；否则见下「采集脚本」
+   ```
+   若 `devtools/collect_fish.py` 不存在，可用这段逻辑重建：`api.biomes()` → 对每个 `biomeId`（`b.id`）`api._get('/api/fishpedia?biomeId='+id)` → 收集 `fish[]` 的 `{fishId,name}`（fishId 前两段=biomeId、三段=rarity）。
+3. 生成 `HARD_FISH` 数组字面量，按 `(biomeId, rarity, num)` 排序、每项 `['b_xxx_rarity_num', '中文名']`。
+4. 整段替换 `一键市场.js` 里 `const HARD_FISH = [...]`（含头评论行起、到闭合 `];` 止）——**务必用真实采集数据整体覆盖，不要手写/漏项**。
+5. `node --check scripts/一键市场.js`（EXIT=0）后请用户浏览器重载验品种数齐全（尤其奥秘 75 种）。
+
+> ⚠️ 教训：曾手写一小段示例鱼表（含不存在的 b_020/秘海 等）误植进代码，后被真实采集 990 项整体覆盖修复。**鱼种数据必须来自 `/api/fishpedia` 采集，禁止占位/臆造。**
 
 ### 快速验证
 
