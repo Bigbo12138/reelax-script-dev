@@ -967,13 +967,29 @@
     $('#rh-collapse', panel).onclick = (e) => { e.stopPropagation(); setCollapsed(true); }; // 阻止冒泡：否则收起后同一击会立刻冒泡到面板的"点击展开"，一收一开等于没动
     setCollapsed(true); // 默认收起
     const bindNum = (id, fn) => { const el = $(id, panel); el.onchange = e => fn(el, e); };
-    $('#rh-preview', panel).onclick = async () => { plan = await buildMapPlan(); renderPreview(); setPreviewOpen(true); };
+    // 「以物易物」发布交换页判定：.barter 面板 + panel=listing
+    const isOnBarterListing = () => location.pathname.replace(/\/+$/, '') === '/market'
+      && location.search.includes('market=barter')
+      && location.search.includes('panel=listing');
+    // 不在该页则自动跳转，并用 sessionStorage 记下待办，落地后脚本重注入自动续跑
+    const ensureBarterPage = (pending) => {
+      if (isOnBarterListing()) return true;
+      try { sessionStorage.setItem('rh_pending', pending); } catch (e) {}
+      toast('↪ 正在切换到「以物易物」发布交换页面…', 2500);
+      log('↪ 未在发布交换页，跳转到 https://reelax.cn/market?market=barter&panel=listing');
+      location.href = 'https://reelax.cn/market?market=barter&panel=listing';
+      return false;
+    };
+    // 「生成预览」：不在发布交换页则先跳转，落地后自动重放预览
+    $('#rh-preview', panel).onclick = async () => {
+      if (!ensureBarterPage('preview')) return;
+      plan = await buildMapPlan(); renderPreview(); setPreviewOpen(true);
+    };
     // 「开始」：勾选「自动循环」→ 循环发布直到点「停止」；不勾选 → 只发布一轮（张数=每轮发布张数）
     const startRun = async (loopMode) => {
       if (CFG.busy) return;
-      // 重要提醒：表单操作依赖「以物易物」页面的 DOM，必须人工先切到该界面
-      toast('⚠ 开始前请确认：已手动切换到「以物易物」界面！', 4500);
-      log('⚠ 提示：请确保已手动切换到「以物易物」界面，否则无法打开发布表单。');
+      // 表单操作依赖「以物易物」发布交换页面的 DOM：不在该页则自动跳转，落地后自动续跑
+      if (!ensureBarterPage(loopMode ? 'start-loop' : 'start-once')) return;
       CFG.busy = true; CFG.userStopped = false;
       const btn = $('#rh-puball', panel);
       btn.textContent = '■ 运行中…';
@@ -1116,7 +1132,28 @@
   }
 
   // ---------------- 启动 ----------------
-  function init() { buildPanel(); loadInventory(false).then(renderSummary); }
+  function init() {
+    buildPanel();
+    // 若刚由本脚本从其它页跳到发布交换页：落地后自动续跑之前点的操作
+    let pending = null;
+    try { pending = sessionStorage.getItem('rh_pending'); } catch (e) {}
+    if (pending) {
+      try { sessionStorage.removeItem('rh_pending'); } catch (e) {}
+      // 等页面/表单 DOM 稳定后再续跑；不走 startRun 变量（它在 buildPanel 闭包内，init 作用域不可见），
+      // 直接把真实「生成预览 / 开始」按钮的 DOM click 打下去，与用户手点路径完全一致。
+      setTimeout(() => {
+        const p = $('#reelax-helper-panel');
+        if (!p) return;
+        if (pending === 'preview') {
+          $('#rh-preview', p).click();
+        } else {
+          $('#rh-loopset', p).checked = (pending === 'start-loop'); // 恢复原点击的循环意图
+          $('#rh-puball', p).click();
+        }
+      }, 1200);
+    }
+    loadInventory(false).then(renderSummary);
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
