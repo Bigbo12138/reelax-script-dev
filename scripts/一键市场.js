@@ -2763,20 +2763,35 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (biome) targets = targets.filter((f) => f.biomeId === biome);
     // 勾选「仅拉取专精鱼」时，仅保留玩家专精链目标鱼（masteryFishIds 返回的 fishId 集合）
     const onlyMastery = el('rlb-tab-mastery') ? el('rlb-tab-mastery').checked : false;
-    const mset = await masteryFishIds(); // 专精鱼 fishId 集合（标 *）；获取失败时可能为 null
-    // 专精鱼当前等级映射（供渲染显示专精等级）
-    const lvlMap = await masteryLevelMap();
-    const myBuy = (await myActiveBuyFishIds()) || new Set();
-    if (onlyMastery && mset === null) {
-      if (st) st.textContent = '⚠️ 专精数据获取失败，无法筛选专精鱼（请重试）';
-      return;
-    }
+    // —— 鱼种已硬编码（不拉 fishpedia）；专精/等级/已求也不再串行阻塞扫描。
+    //    先用「本地持久化专精集合」秒出 * 标记，再把 /api/mastery×2 与 /api/market/my-orders
+    //    拉到的数据后台并行补齐后重渲染（仅影响 * / LV / 已求，不影响扫描本身）。——
+    let mset = loadMasteryIds() || null; // 本地持久化专精集合（瞬读）；null=暂无本地数据待后台拉
+    const lvlMap = new Map();            // 专精等级：后台拉取后填充
+    let myBuy = new Set();               // 已求：后台刷新后填充
+    // 仅「只拉专精鱼」才需要真实 /api/mastery 才能筛得出目标 → 这种情况等这 3 个网络请求（并行）。
+    // 普通扫描：立刻用本地数据开始，3 个请求全部放后台回调里刷新标记即可。
+    const [mm] = await (onlyMastery
+      ? Promise.all([masteryFishIds(), masteryLevelMap(), myActiveBuyFishIds()])
+      : [null, null, null]);
     if (onlyMastery) {
-      targets = targets.filter((f) => mset.has(f.fishId));
+      if (mm) { mset = mm; }            // 专精集合就绪（可能此刻才有本地）
+      targets = targets.filter((f) => mset && mset.has(f.fishId));
     }
     if (!targets.length) {
       if (st) st.textContent = onlyMastery ? 'ℹ️ 该条件下没有专精鱼' : 'ℹ️ 该条件下没有鱼';
       return;
+    }
+    // 后台并行补齐专精/等级/已求（普通扫描非阻塞）：各自就绪即覆写即时值并重渲染
+    if (!onlyMastery) {
+      (async () => {
+        const [mf, ml] = await Promise.all([masteryFishIds(), masteryLevelMap()]);
+        if (mf) mset = mf;
+        if (ml) for (const [k, v] of ml.entries()) lvlMap.set(k, v);
+        renderBargainList();
+        saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
+      })();
+      (async () => { const mb = await myActiveBuyFishIds(); if (mb) myBuy = mb; })();
     }
     console.log(TAG, `捡漏: rarity=${rarity}, biome=${biome}, allFish=${allFish.length}, targets=${targets.length}, onlyMastery=${onlyMastery}`);
     const rarityName = isAll ? '全部品级' : objBargainRarityName(rarity);
