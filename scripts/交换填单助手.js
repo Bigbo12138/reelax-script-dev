@@ -61,6 +61,22 @@
 
   const RARITY_LABEL = { mythic: '神话', exotic: '奇异', arcane: '奥秘' };
   const TYPE_LABEL = { specialized: '专精', nonSpecialized: '非专精', all: '全部' };
+  // ---------------- 配置持久化（localStorage：跨页/刷新保留发布规则） ----------------
+  const RH_CFG_KEY = 'rh_cfg_v1';
+  // 需要持久化的 CFG 字段（r：稀有度映射，loop：自动循环开关）
+  const CFG_PERSISTABLE = ['rarities', 'maxOrdersPerCycle', 'unlistFirst', 'maxMapDrop', 'keepPerFish',
+    'loopIntervalMin', 'publishDelaySec', 'rateDelayMs', 'wantType', 'wantQtyMode', 'wantQtyFixed',
+    'provideType', 'provideQtyMode', 'provideQtyFixed', 'loop'];
+  const saveCfg = () => {
+    try {
+      const o = {};
+      for (const k of CFG_PERSISTABLE) o[k] = k === 'loop' ? !!$('#rh-loopset')?.checked : CFG[k];
+      localStorage.setItem(RH_CFG_KEY, JSON.stringify(o));
+    } catch (e) {}
+  };
+  const loadCfg = () => {
+    try { return JSON.parse(localStorage.getItem(RH_CFG_KEY)) || {}; } catch (e) { return {}; }
+  };
   const PANEL_STYLE = `
     position:fixed; z-index:999999; left:16px; top:16px; width:450px;
     max-height:92vh; display:flex; flex-direction:column;
@@ -1069,6 +1085,50 @@
     $('#rh-loopset', panel).onchange = (e) => { $('#rh-loopcard', panel).style.display = e.target.checked ? '' : 'none'; };
 
     log('面板就绪（v1.0 多稀有度）。点「生成预览」查看跨图组单，或直接「开始」。');
+
+    // ---- 恢复已保存的配置：回填 CFG 与表单项 ----
+    const saved = loadCfg();
+    if (saved && Object.keys(saved).length) {
+      if (Array.isArray(saved.rarities)) {
+        CFG.rarities = saved.rarities;
+        ['mythic', 'exotic', 'arcane'].forEach(r => {
+          const cb = $('#rh-rar-' + r, panel); if (cb) cb.checked = saved.rarities.includes(r);
+        });
+      }
+      if (typeof saved.maxOrdersPerCycle === 'number') CFG.maxOrdersPerCycle = saved.maxOrdersPerCycle;
+      ['unlistFirst', 'wantType', 'wantQtyMode', 'provideType', 'provideQtyMode'].forEach(k => {
+        if (saved[k] != null) CFG[k] = saved[k];
+      });
+      ['maxMapDrop', 'keepPerFish', 'loopIntervalMin', 'publishDelaySec', 'wantQtyFixed', 'provideQtyFixed'].forEach(k => {
+        if (saved[k] != null) CFG[k] = saved[k];
+      });
+      if (typeof saved.rateDelayMs === 'number') CFG.rateDelayMs = saved.rateDelayMs;
+      // 输入框 id → CFG 字段（用于回填显示）
+      const setNum = (id, v) => { const el = $(id, panel); if (el && v != null) el.value = v; };
+      const setBool = (id, v) => { const el = $(id, panel); if (el) el.checked = !!v; };
+      const setSel = (id, v) => { const el = $(id, panel); if (el && v != null) el.value = v; };
+      setNum('#rh-drop', CFG.maxMapDrop);
+      setNum('#rh-keep', CFG.keepPerFish);
+      setNum('#rh-interval', CFG.loopIntervalMin);
+      setNum('#rh-pubdelay', CFG.publishDelaySec);
+      setNum('#rh-rate', CFG.rateDelayMs / 1000);
+      setNum('#rh-wantfixed', CFG.wantQtyFixed);
+      setNum('#rh-providefixed', CFG.provideQtyFixed);
+      setBool('#rh-unlist', CFG.unlistFirst);
+      setSel('#rh-wanttype', CFG.wantType);
+      setSel('#rh-wantqty', CFG.wantQtyMode);
+      setSel('#rh-providetype', CFG.provideType);
+      setSel('#rh-provideqty', CFG.provideQtyMode);
+      setBool('#rh-loopset', saved.loop);
+      setBool('#rh-onum-max', CFG.maxOrdersPerCycle >= 9999);
+      // 恢复后同步循环卡片显示（程序化勾选不触发 change，这里手动对齐 UI）
+      const lc = $('#rh-loopset', panel);
+      if (lc) $('#rh-loopcard', panel).style.display = lc.checked ? '' : 'none';
+      syncOnumVis();
+      syncQtyVis();
+    }
+    // 任意输入变化即保存（用事件委托，覆盖所有 rh-* 输入/选择/复选框；change 只在用户交互后触发，初始回填不会触发）
+    panel.addEventListener('change', saveCfg);
   }
 
   function renderSummary() {
