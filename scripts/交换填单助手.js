@@ -18,8 +18,8 @@
  *      想要池 = 各图专精缺口鱼（数量=缺口）；提供池 = 各图非专精多余鱼（数量=多余，逐单扣减，避免重复托管）。
  *   2) 组单规则：每单最多 5 行想要 + 5 行提供，尽量填满。
  *      想要按图号从高到低分组（保证同单内图号接近）；
- *      一单的提供鱼必须满足 图号 ≤ 本单想收的最低图号 + maxMapDrop（默认3）——
- *      即：低图鱼可以换任意高图鱼；高图鱼最多下降3张图使用（如收9图鱼可给1~12图，收1图鱼只能给1~4图）。
+ *      一单的提供鱼与想要鱼满足 |给图 - 收图| ≤ maxMapDrop（默认3，0=严格同图换同图）——
+ *      span=1：收/给图号最多差1张（如给12图可换11~13图）；span=0：只能同图号互相换。
  *   3) 提供鱼优先消耗"高图号"的：高图鱼只能用于高图单，先把它们用掉，低图鱼留给受限的低图单。
  * - 自动循环：按设定间隔（默认20分钟，可调）执行 下架旧单→缓冲→发布新单；请求间隔可调，避免服务器繁忙。
  * - 交易操作为 DOM 驱动，发布前有倒计时可取消；最终由游戏服务端校验。
@@ -43,7 +43,7 @@
 
     maxMaps: 0,                        // 0=全部15图（调试时可限制）
     maxRows: 5,                        // 每单每侧最多行数（游戏上限5）
-    maxMapDrop: 3,                     // 跨图规则：给鱼图号 ≤ 想收最低图号 + N（默认3：高图鱼最多下降3张图）
+    maxMapDrop: 3,                     // 跨图跨度：|给图 - 收图| ≤ N（0 = 严格同图换同图；N=3 即高图可降3、低图可升3）
     maxPlanOrders: 15,                 // 最多生成多少张跨图单（超出部分轮换周期覆盖不到，意义不大）
     maxOrdersPerCycle: 9999,           // 每轮发布张数（默认勾选「当前可用最多」=9999，即发完计划全部）
     rotateOffset: (() => { try { return +localStorage.getItem('rh_rotate_offset') || 0; } catch (e) { return 0; } })(),
@@ -450,13 +450,11 @@
   // ---------------- 跨图组单 ----------------
   // 目标优先级：① 清空背包——每一种多余鱼都要有单可去（给鱼 5 种/单，需要多少单开多少单，
   //             想要的缺口允许拆分到多张单做"收口"，如缺10 → 一单收5、另一单收5）；
-  //             ② 梯度规则——单内任意一对 收/给 都要"门当户对"：
-  //                游戏硬规则：给 ≤ 收 + 3（想收N图最多收N+3图以内的鱼）；
-  //                梯度约束（=跨度设置）：给 ≥ 收 - 跨度（收B12的鱼最低也只配B9的给鱼，
-  //                拿B1换B15虽然合法但根本没人会来换）。
-  // 组单以"给鱼"驱动：给鱼按图号从高到低排队，每 5 种一单，且单内给鱼图号跨度 ≤ span（梯度紧凑）；
-  // 本单想收图号必须在 [最高给鱼-3, 最低给鱼+跨度] 区间内，收的数量从剩余缺口里取（优先高图号），
-  // 目标覆盖本单托管量，缺口不够时有多少收多少。
+//             ② 梯度规则（=跨图跨度 span）——单内任意一对 收/给 满足 |给图 - 收图| ≤ span：
+//                span=0：严格同图换同图；span=1：收/给图号最多差1张；span≥3 时仅受游戏硬规则约束（给 ≤ 收+3）。
+// 组单以"给鱼"驱动：给鱼按图号从高到低排队，每 5 种一单，且单内给鱼图号跨度 ≤ span（梯度紧凑）；
+// 本单想收图号必须在 [最高给图-span, 最低给图+span] 区间内，收的数量从剩余缺口里取（优先高图号），
+// 目标覆盖本单托管量，缺口不够时有多少收多少。
   function allocateOrders(wantPool, providePool) {
     const span = CFG.maxMapDrop;
     const GAME_MAX_UP = 3; // 游戏硬规则：给鱼最多比想收高 3 张图
@@ -493,8 +491,9 @@
       }
       const giveMax = giveChunk[0].rank;
       const minGive = giveChunk[giveChunk.length - 1].rank;
-      const wantLo = giveMax - GAME_MAX_UP;   // 想收下限（游戏硬规则）
-      const wantHi = minGive + span;          // 想收上限（梯度约束）
+      // 跨图跨度：|给图 - 收图| ≤ span（0 = 严格同图换同图）。下限取「给最高图 - span」与游戏硬规则取更严者（span≥3 时即回到游戏规则 给≤收+3）。
+      const wantLo = giveMax - Math.min(span, GAME_MAX_UP);
+      const wantHi = minGive + span;          // 想收上限（对称跨度：不能收得比最低给图还高超过 span）
       const escrowQty = giveChunk.reduce((s, g) => s + g.qty, 0);
       // 收口：从剩余缺口里选想收（图号 ∈ [wantLo, wantHi]，优先高图号），目标覆盖托管量
       const wantRows = [];
@@ -520,11 +519,14 @@
     let relaxedUsed = false;
     while (idx < giveList.length && orders.length < CFG.maxPlanOrders) {
       const giveChunk = [giveList[idx]]; idx++;
-      while (idx < giveList.length && giveChunk.length < ROWS) { giveChunk.push(giveList[idx]); idx++; }
+      // 兜底同样遵守跨图跨度：单内给鱼图号差 ≤ span（防止破例阶段也大幅跨图）
+      while (idx < giveList.length && giveChunk.length < ROWS && giveChunk[0].rank - giveList[idx].rank <= span) { giveChunk.push(giveList[idx]); idx++; }
       const giveMax = giveChunk[0].rank;
-      const wantLo = giveMax - GAME_MAX_UP;
+      const minGive = giveChunk[giveChunk.length - 1].rank;
+      const wantLo = giveMax - Math.min(span, GAME_MAX_UP);
+      const wantHi = minGive + span;
       const escrowQty = giveChunk.reduce((s, g) => s + g.qty, 0);
-      const elig = wants.filter(w => w.qty > 0 && w.rank >= wantLo).sort((a, b) => a.rank - b.rank);
+      const elig = wants.filter(w => w.qty > 0 && w.rank >= wantLo && w.rank <= wantHi).sort((a, b) => a.rank - b.rank);
       const wantRows = [];
       let demand = 0;
       for (const w of elig) {
@@ -534,8 +536,8 @@
         w.qty -= take; demand += take;
         if (demand >= escrowQty) break;
       }
-      if (!wantRows.length) { log(`⚠ 剩余 ${giveChunk.length} 种给鱼连游戏规则下的缺口都没有（缺口已全部用完），无法挂单`); break; }
-      if (!relaxedUsed) { relaxedUsed = true; log(`⚠ 梯度破例启动：剩余给鱼没有门当户对的缺口，改按"只守游戏规则"组单（清背包优先，单内收/给图号差可能较大）`); }
+      if (!wantRows.length) { log(`⚠ 剩余 ${giveChunk.length} 种给鱼在跨图跨度(=${span})内没有缺口（缺口已用完或同图无缺口），无法挂单`); break; }
+      if (!relaxedUsed) { relaxedUsed = true; log(`⚠ 梯度破例启动：剩余给鱼没有门当户对的缺口，改按「仍守跨图跨度」组单（清背包优先，但收/给图号差 ≤ 跨度）`); }
       orders.push({
         mapName: `跨图单${orders.length + 1}`,
         maxGive: giveMax,
