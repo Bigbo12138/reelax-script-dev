@@ -67,6 +67,8 @@ fishAutoSell: true,
   sacrificeFishRarities: ['uncommon'],  // 鱼献祭只捐勾选品级（多选）；仅 common~epic 可献祭
   guildBoostAuto: true,
   worldBossAuto: true,
+  worldBossRespec: false, // 世界Boss全洗弱点：开战时真实洗点到弱点，结束后复原；默认关
+  worldBossRespecStats: ['strength', 'intelligence', 'luck', 'endurance'], // 全洗弱点·仅弱点属此集合才触发（四属性多选）
   sacrificeServerPct: 60,
   dailyReportWebhook: false, // 挂机日报 webhook 开关
   dailyReportTimes: '',      // 日报推送时间（北京时间，逗号分隔，如 09:30,18:30）
@@ -157,6 +159,11 @@ async function load() {
   }
   $('guildBoostAuto').checked = cfg.guildBoostAuto !== false;
   $('worldBossAuto').checked = cfg.worldBossAuto !== false;
+  $('worldBossRespec').checked = cfg.worldBossRespec === true;
+  for (const s of ['strength', 'intelligence', 'luck', 'endurance']) {
+    const el = document.querySelector(`[data-wbrespec-${s}]`);
+    if (el) el.checked = (Array.isArray(cfg.worldBossRespecStats) ? cfg.worldBossRespecStats : ['strength', 'intelligence', 'luck', 'endurance']).includes(s);
+  }
   $('dailyReportWebhook').checked = !!cfg.dailyReportWebhook;
   $('dailyReportTimes').value = cfg.dailyReportTimes || '';
   // ---- 市场装备监测 ----
@@ -245,6 +252,9 @@ function save() {
       (r) => document.querySelector(`[data-sacrificefish-${r}]`)?.checked,),
     guildBoostAuto: $('guildBoostAuto').checked,
     worldBossAuto: $('worldBossAuto').checked,
+    worldBossRespec: $('worldBossRespec').checked,
+    worldBossRespecStats: ['strength', 'intelligence', 'luck', 'endurance'].filter(
+      (s) => document.querySelector(`[data-wbrespec-${s}]`)?.checked,),
     dailyReportWebhook: $('dailyReportWebhook').checked,
     dailyReportTimes: $('dailyReportTimes').value.trim(),
     gearWatchEnabled: $('gearWatchEnabled').checked,

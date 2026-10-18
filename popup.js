@@ -893,12 +893,19 @@ function renderWorldBoss() {
   setTxt('wb-selected', sel ? (WB_CN[sel] || sel) + selPct : '未报名');
   const target = w.targetStat;
   const isWeak = w.boss && w.boss.weaknessStat === target;
-  // 目标属性伤害期望明细（各属性 属性值×倍率 的期望值）
-  let detail = '';
-  if (w.expected) {
-    detail = '（' + ['strength','intelligence','luck','endurance'].map(k => (WB_CN[k]||k) + '×' + w.expected[k]).join(' / ') + '）';
-  }
-  setTxt('wb-target', target ? (WB_CN[target] || target) + (isWeak ? ' ×200%(弱点)' : ' ×伤害最大') + detail : '—');
+  // 目标属性伤害期望明细 + 全洗弱点状态
+  const rs = mon.worldBossRespecState;
+  const rsAllowed = (Array.isArray(mon.worldBossRespecStats) && mon.worldBossRespecStats.length)
+    ? mon.worldBossRespecStats.map((s) => WB_CN[s] || s).join('/')
+    : '无';
+  const rsNote = (mon.worldBossRespec === true)
+    ? ((rs && rs.weak && rs.sessionId === (w && w.sessionId))
+        ? ' · 全洗弱点' + (rs.washed ? '✅已洗' : (rs.restoring ? '⏳复原' : '🚀待开战')) + (WB_CN[rs.weak] || rs.weak)
+        : (w.respecBlocked
+            ? ' · 全洗弱点跳过(弱点未勾选;限' + rsAllowed + ')'
+            : ((w && w.respec && w.respec.allInWins) ? ' · 全洗弱点(将报' + (WB_CN[w.respec.weak] || w.respec.weak) + ')' : '')))
+    : (w.respecBlocked ? ' · 全洗弱点关' : '');
+  setTxt('wb-target', target ? (WB_CN[target] || target) + (isWeak ? ' ×200%(弱点)' : ' ×伤害最大') + rsNote : '—');
 
   // 自动报名状态
   const autoEl = el('wb-auto');

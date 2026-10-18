@@ -55,6 +55,8 @@ const MONITOR_DEFAULTS = {
   sacrificeFishRarities: ['uncommon'], // 鱼献祭只捐勾选品级（多选）；仅 common~epic 可献祭
   guildBoostAuto: true,   // 区域经验增益自动开启（公会增益）：由聚合优选地图通知驱动自动开
   worldBossAuto: true,    // 世界Boss自动报名：每 10 分钟检测，按「各属性 属性值×倍率」伤害最大化报名/改选（弱点×200%仅在该属性实际数值最高时才会被选中）
+  worldBossRespec: false, // 世界Boss「全洗弱点」自动洗点：开启后若「重置+全投 boss 弱点」的期望伤害 严格大于 原逻辑最大期望，则报名弱点并在 battleAt 开战时真实洗点到该弱点，Boss 结束后复原为原方案。默认关（激进、会真实重骰属性）
+  worldBossRespecStats: ['strength', 'intelligence', 'luck', 'endurance'], // 世界Boss全洗弱点·仅当弱点属于用户勾选的属性才触发（四属性多选；默认全选=不限）
   dailyReportWebhook: false, // 挂机日报 webhook 开关（开启后在指定北京时报若干推送当日日报摘要）
   dailyReportTimes: '',      // 日报推送时间（北京时，24h，多个用英文逗号分隔），如 "09:30,18:30"；空=不推送
   gearWatchEnabled: false,    // 市场装备监测开关（10 分钟轮询；命中任意需求单 → webhook 通知）
@@ -158,6 +160,9 @@ pityTrigger: {          // 保底触发运行时状态机（见 evaluatePityTrig
   lastSacrificeAuto: null,  // 最近一次自动贡献结果 {ok, reason, resourceType, serverPct, contributed, at}
   guildBoostAuto: MONITOR_DEFAULTS.guildBoostAuto,   // 区域经验增益(公会增益)自动开启开关
   worldBossAuto: MONITOR_DEFAULTS.worldBossAuto, // 世界Boss自动报名开关
+  worldBossRespec: MONITOR_DEFAULTS.worldBossRespec, // 世界Boss「全洗弱点」自动洗点开关
+  worldBossRespecStats: MONITOR_DEFAULTS.worldBossRespecStats.slice(), // 世界Boss全洗弱点·允许触发的属性（多选；弱点属此集合才洗）
+  worldBossRespecState: null, // 世界Boss「全洗弱点」生命周期状态机 { sessionId, weak, battleAt, escapeAt, washed, washing, restoring, restoreSig }
   dailyReportWebhook: MONITOR_DEFAULTS.dailyReportWebhook, // 挂机日报 webhook 开关
   dailyReportTimes: MONITOR_DEFAULTS.dailyReportTimes,     // 日报推送时间（北京时，逗号分隔）
   gearWatchEnabled: MONITOR_DEFAULTS.gearWatchEnabled,    // 市场装备监测开关
@@ -250,6 +255,12 @@ async function monitorLoadConfig() {
     m.pityMonitor = cfg.pityMonitor !== false;
     m.pityCheckSec = Number(cfg.pityCheckSec) >= 60 ? Number(cfg.pityCheckSec) : MONITOR_DEFAULTS.pityCheckSec;
     m.worldBossAuto = cfg.worldBossAuto !== false;
+    m.worldBossRespec = cfg.worldBossRespec === true;
+    // 全洗弱点·允许触发的属性（多选）；非法值剔除，空数组=不触发任何弱点
+    if (Array.isArray(cfg.worldBossRespecStats)) {
+      const kept = cfg.worldBossRespecStats.filter((k) => STAT_KEYS.indexOf(k) !== -1);
+      m.worldBossRespecStats = kept.length ? kept : [];
+    }
     m.dailyReportWebhook = !!cfg.dailyReportWebhook;
     m.dailyReportTimes = String(cfg.dailyReportTimes || '').trim();
     // ---- 市场装备监测 ----
@@ -2880,8 +2891,28 @@ function worldBossStatMultipliers(boss) {
   return m;
 }
 
+// —— 纯函数：全员「全洗到 boss 弱点」假设的期望伤害 ——
+// snap: { totals, base, unspent }（worldBossPlayerSnapshot 产物）。
+// 逻辑：假设执行 resetStats → base 清零、可用池 = unspent + Σbase；
+//   · 弱点属性全洗后总值 ≈ flat(装备/遗物对该属性的加成) + (池 − enduranceBase)；
+//   · 期望伤害 = 全洗后弱点总值 × 2.0（弱点恒 ×200%）。
+// boss 无弱点时不可洗点 → 返回 null。
+function computeWorldBossAllIn(boss, snap, enduranceBase) {
+  if (!boss || !boss.weaknessStat) return null;
+  const weak = boss.weaknessStat;
+  const base = snap ? snap.base : null;
+  const totals = snap ? snap.totals : null;
+  if (!base || !totals) return null;
+  const baseSum = STAT_KEYS.reduce((s, k) => s + (base[k] || 0), 0);
+  const pool = Math.max(0, (snap.unspent | 0) + baseSum);   // 全洗后可用点数
+  const reserve = Math.max(0, Math.min(enduranceBase || 0, pool)); // 尊重耐力预留
+  const flatWeak = Math.max(0, (totals[weak] || 0) - (base[weak] || 0)); // 该属性装备/遗物加成
+  const allInTotal = flatWeak + (pool - reserve);            // 全投弱点后的该属性总值
+  const allInExpected = allInTotal * WORLD_BOSS_MULT.weakness;
+  return { weak, baseSum, pool, reserve, flatWeak, allInTotal, allInExpected };
+}
+
 // 选最优攻击属性：在 4 个属性里取「属性值 × 倍率」最大者。
-// playerTotals: { strength, intelligence, luck, endurance }（我方各属性总值）；
 // 若缺 playerTotals 则退化回「弱点属性」（保持旧行为，不报错）。
 // 返回 { targetStat, expected:{stat:val}, best }
 function computeWorldBossBestStat(boss, playerTotals) {
@@ -2900,21 +2931,57 @@ function computeWorldBossBestStat(boss, playerTotals) {
   return { targetStat, expected, best: best === -Infinity ? null : Math.round(best) };
 }
 
+// 全洗弱点开关的「属性白名单」判定：仅当弱点是用户勾选的四属性之一才允许触发洗点。
+// 空集合（未勾选任何）→ 永不触发；非 STAT_KEYS 值返回 false。
+function worldBossRespecStatAllowed(stat) {
+  if (!stat) return false;
+  const allowed = Array.isArray(m.worldBossRespecStats) ? m.worldBossRespecStats : [];
+  return allowed.indexOf(stat) !== -1;
+}
+
 // 从 /api/events/world-boss 响应提取当前场次+选角方案（供 popup 展示）
 // data: 接口响应 data 字段；playerTotals: 我方各属性总值（用于伤害最大化选角）。
 // 返回 { session, boss, player, targetStat, shouldChange, changedAt, expected, best }
-function computeWorldBossPlan(data, playerTotals) {
+function computeWorldBossPlan(data, playerTotals, snap) {
   const s = data && data.session ? data.session : null;
   if (!s) return { status: null, hasSession: false };
   const b = s.boss || {};
   const p = s.player || {};
   const bestPlan = computeWorldBossBestStat(b, playerTotals);
   const targetStat = bestPlan.targetStat; // 伤害最大化目标属性（可能是弱点，也可能不是）
+  // —— 世界Boss「全洗弱点」分支：计算假设 + 相对原逻辑最大期望的胜出判据（严格大于）——
+  // 仅当：开关开启 && boss 有弱点 && 该弱点属于用户勾选的允许属性（worldBossRespecStats，四属性多选）
+  let respec = null;
+  if (m.worldBossRespec && b.weaknessStat && worldBossRespecStatAllowed(b.weaknessStat)) {
+    const allIn = computeWorldBossAllIn(b, snap, m.enduranceBase);
+    if (allIn) {
+      const bestExp = (bestPlan.best != null) ? bestPlan.best : 0;
+      // 全洗后期望 严格大于 当前最优期望 才判定「洗点更优」；相等/小于走原逻辑（保护现有策略）
+      const allInWins = allIn.allInExpected > bestExp + 1e-9;
+      // 报名目标：洗点更优则报弱点（battleAt 再真洗），否则沿用伤害最大化属性
+      const regStat = allInWins ? b.weaknessStat : targetStat;
+      respec = {
+        weak: b.weaknessStat,
+        allInExpected: Math.round(allIn.allInExpected),
+        allInTotal: Math.round(allIn.allInTotal),
+        flatWeak: Math.round(allIn.flatWeak),
+        pool: allIn.pool,
+        reserve: allIn.reserve,
+        bestExpected: Math.round(bestExp),
+        allInWins,
+        regStat,
+      };
+    }
+  }
   const selectedStat = p.selectedStat || null;
   const isLocked = p.isLocked === true;
   const inWindow = WORLD_BOSS_ACTIVE_STATUS.indexOf(s.status) !== -1;
-  // 可报名/改选条件：处于报名窗口 && 未锁定 && 已选属性不是目标（伤害最大化）属性
-  const shouldChange = !!(inWindow && !isLocked && targetStat && selectedStat !== targetStat);
+  // 全洗弱点被「属性白名单」拦截：开关开且 boss 有弱点，但该弱点是用户未勾选的属性 → 提示「弱点不在勾选集合」
+  const respecBlocked = !!(m.worldBossRespec && b.weaknessStat && !worldBossRespecStatAllowed(b.weaknessStat));
+  // 可报名/改选条件：处于报名窗口 && 未锁定 && 已选属性不是目标属性
+  // （目标属性：洗点更优时取弱点，否则取伤害最大化属性）
+  const regTarget = respec ? respec.regStat : targetStat;
+  const shouldChange = !!(inWindow && !isLocked && regTarget && selectedStat !== regTarget);
   const multBP = p.multiplierBasisPoints != null ? p.multiplierBasisPoints : null;
   return {
     hasSession: true,
@@ -2927,9 +2994,12 @@ function computeWorldBossPlan(data, playerTotals) {
       multiplierBasisPoints: multBP,
       multiplierPct: multBP != null ? (multBP / 100) : null,
     },
-    targetStat: targetStat,
+    targetStat: regTarget,          // 实际报名/改选目标（可能因全洗弱点被覆写为弱点）
+    baseTargetStat: targetStat,     // 原伤害最大化目标（未被洗点分支覆写时相同）
     expected: bestPlan.expected,
     best: bestPlan.best,
+    respec: respec,
+    respecBlocked: respecBlocked,
     inWindow: inWindow,
     shouldChange: shouldChange,
     battleAt: s.battleAt,
@@ -2971,6 +3041,49 @@ async function refreshWorldBossPlayerTotals() {
   return worldBossPlayerTotals();
 }
 
+// —— 世界Boss「全洗弱点」决策所需的本方属性快照 ——
+// 除 4 属性总值(total)外，还要 base（用于推全洗后可用池）与 unspentStatPoints。
+// 返回 { totals, base, unspent } 或 null。短 TTL 缓存避免每 10 分钟重复打 stats 接口。
+let worldBossPlayerSnapshotCache = null; // { snap, at }
+const WORLD_BOSS_SNAP_TTL_MS = 5 * 60 * 1000;
+function statsMetaToFieldMap(k) { // 兜底把对象转成 4 键 map（缺键补 0）
+  const o = {};
+  for (const kk of ['strength', 'intelligence', 'luck', 'endurance']) o[kk] = (k && k[kk] != null) ? (k[kk] | 0) : 0;
+  return o;
+}
+function worldBossPlayerSnapshot() {
+  const now = Date.now();
+  if (worldBossPlayerSnapshotCache && now - worldBossPlayerSnapshotCache.at < WORLD_BOSS_SNAP_TTL_MS) {
+    return worldBossPlayerSnapshotCache.snap;
+  }
+  const stats = (m.sync && m.sync.player && m.sync.player.stats) || null;
+  const snap = {
+    totals: statsMetaToFieldMap(stats ? stats.total : null),
+    base: statsMetaToFieldMap(stats ? stats.base : null),
+    unspent: (m.sync && m.sync.unspentStatPoints != null) ? (m.sync.unspentStatPoints | 0) : 0,
+  };
+  worldBossPlayerSnapshotCache = { snap, at: now };
+  return snap;
+}
+async function refreshWorldBossPlayerSnapshot() {
+  try {
+    const r = await ReelaxApi.playerStats();
+    if (r && r.ok && r.player && r.player.stats) {
+      const p = r.player;
+      const snap = {
+        totals: statsMetaToFieldMap(p.stats.total),
+        base: statsMetaToFieldMap(p.stats.base),
+        unspent: (p.unspentStatPoints != null) ? (p.unspentStatPoints | 0) : 0,
+      };
+      worldBossPlayerSnapshotCache = { snap, at: Date.now() };
+      worldBossPlayerTotalsCache = { totals: snap.totals, at: Date.now() };
+      if (p.unspentStatPoints !== undefined) m.sync.unspentStatPoints = p.unspentStatPoints;
+      return snap;
+    }
+  } catch (e) { /* 忽略，回退到缓存 */ }
+  return worldBossPlayerSnapshot();
+}
+
 // 拉取世界Boss状态并刷新方案（供 popup 展示）
 async function checkWorldBoss() {
   if (worldBossInProgress) return;
@@ -2978,17 +3091,24 @@ async function checkWorldBoss() {
   try {
     const res = await ReelaxApi.worldBossOverview();
     if (res && res.ok && res.data) {
-      // 取我方属性总值用于「伤害最大化」选角（优先同步缓存，必要时回查）
-      let totals = worldBossPlayerTotals();
-      if (!totals) totals = await refreshWorldBossPlayerTotals();
-      m.worldBoss = computeWorldBossPlan(res.data, totals);
+      // 取我方属性快照（total + base + unspent）用于选角与「全洗弱点」决策（优先同步缓存，必要时回查）
+      let snap = worldBossPlayerSnapshot();
+      let totals = snap.totals;
+      if (!totals || Object.keys(snap.base).length === 0) {
+        snap = await refreshWorldBossPlayerSnapshot();
+        totals = snap.totals;
+      }
+      m.worldBoss = computeWorldBossPlan(res.data, totals, snap);
       m.lastWorldBossError = null;
       const s = m.worldBoss;
       const expStr = s.expected
         ? (' 期望: ' + STAT_KEYS.map(k => STAT_LABELS[k] + '=' + s.expected[k]).join('/') + ' → 选' + (s.targetStat ? STAT_LABELS[s.targetStat] : '-'))
         : '';
+      const respecStr = (s.respec && s.respec.allInWins)
+        ? (' 全洗弱点=' + s.respec.allInExpected + '(>最优' + s.respec.bestExpected + ') 报' + STAT_LABELS[s.respec.weak])
+        : (s.respec ? (' 全洗弱点=' + s.respec.allInExpected + '(≤最优' + s.respec.bestExpected + ') 走原逻辑') : '');
       console.log('[monitor] 世界Boss状态已刷新:',
-        s.hasSession ? (s.boss.name + '·' + (s.status || '') + ' 已选:' + (s.player.selectedStat || '未报名') + ' 目标:' + (s.targetStat || '-') + expStr) : '无进行中场次');
+        s.hasSession ? (s.boss.name + '·' + (s.status || '') + ' 已选:' + (s.player.selectedStat || '未报名') + ' 目标:' + (s.targetStat || '-') + expStr + respecStr) : '无进行中场次');
     } else {
       m.lastWorldBossError = (res && (res.error || (res.body || '').slice(0, 120))) || 'fetch-failed';
       console.warn('[monitor] 世界Boss状态查询失败:', m.lastWorldBossError);
@@ -3073,8 +3193,9 @@ async function autoSelectWorldBoss() {
     return;
   }
   const isWeak = w.boss && w.boss.weaknessStat === w.targetStat;
+  const usingRespec = !!(w.respec && w.respec.allInWins);
   console.log('[monitor] 世界Boss自动报名: ' + w.boss.name + ' 弱点=' + (w.boss.weaknessStat ? STAT_LABELS[w.boss.weaknessStat] : '-')
-    + (isWeak ? '(×200%)' : '(弱点非最优，改选伤害最大属性)') + '，当前 ' + (w.player.selectedStat || '未报名')
+    + (usingRespec ? '(全洗弱点·更高)' : (isWeak ? '(×200%)' : '(弱点非最优，改选伤害最大属性)')) + '，当前 ' + (w.player.selectedStat || '未报名')
     + ' → 报名 ' + w.targetStat + '(' + STAT_LABELS[w.targetStat] + ')。期望: ' + worldBossExpectedStr(w));
   const r = await selectWorldBoss(w.targetStat);
   m.lastWorldBossAuto = {
@@ -3089,18 +3210,119 @@ async function autoSelectWorldBoss() {
   if (r && r.ok) {
     worldBossHandledSig = w.sessionId + '|' + w.targetStat; // 记录本次成功签名，后续去重
     sendWebhook('[Reelax] ⚔️ 世界Boss自动报名: ' + w.boss.name + ' 已选 ' + STAT_LABELS[w.targetStat]
-      + (isWeak ? '（弱点 ×200%）' : '（伤害最大化，非弱点）'));
+      + (usingRespec ? '（全洗弱点，battleAt 自动洗点）' : (isWeak ? '（弱点 ×200%）' : '（伤害最大化，非弱点）')));
+    // —— 全洗弱点分支：报名成功即武装本次「到 battleAt 洗点成弱点」——
+    if (usingRespec) armWorldBossRefill(w);
   }
   return r;
+}
+
+// —— 世界Boss「全洗弱点」生命周期状态机 ——
+// 三段：报名成功武装 → battleAt 到点真实洗点到弱点 → Boss 结束(escapeAt/离开窗口)复原为原方案。
+// 与既有比赛洗点(executeCompStart/End)共用 respecInProgress + pityTriggerRelease + pauseBuiltinAllocate 接管机制；
+// 冲突（固定优先级互斥接管）：若此刻 m.compActive 真（比赛进行中），世界Boss 洗点让位不执行，避免连续重置。
+
+// 纯函数：全部点数投到某属性（尊重 enduranceBase 预留，不计耐力实际分配）——对标 planCompStart
+function planAllToStat(totalPoints, enduranceBase, stat) {
+  const endurance = Math.max(0, enduranceBase | 0);
+  const body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
+  body[stat] = body[stat] != null ? Math.max(0, totalPoints - endurance) : body[stat];
+  return body;
+}
+
+// 真正执行「reset → 全投弱(stat)」。返回 { ok, reason, at, body, totalPoints }。失败不抛。
+async function executeWorldBossWash(stat) {
+  if (respecInProgress) return { ok: false, reason: 'respec-locked' };
+  if (m.compActive) return { ok: false, reason: 'comp-active' }; // 固定优先级：比赛进行中，世界Boss让位
+  respecInProgress = true;
+  pityTriggerRelease(); // 接管洗点 → 释放保底触发（冻结于 boss 窗口，结束复原时再评估）
+  pauseBuiltinAllocate(REALLOC_PAUSE_MS);
+  m.lastRespecResult = { at: Date.now(), phase: 'world-boss', reason: 'allocating' };
+  try {
+    const stats = await ReelaxApi.playerStats();
+    if (!stats.ok) { m.lastRespecResult = { ok: false, reason: 'stats-failed', at: Date.now() }; return m.lastRespecResult; }
+    const resetR = await ReelaxApi.resetStats();
+    if (!resetR || !resetR.ok) { m.lastRespecResult = { ok: false, reason: 'reset-failed', at: Date.now() }; return m.lastRespecResult; }
+    const after = ReelaxApi.safeParseJSON(resetR.body) || {};
+    if (!after.player) { m.lastRespecResult = { ok: false, reason: 'reset-parse-failed', body: resetR.body, at: Date.now() }; return m.lastRespecResult; }
+    const totalPts = after.player?.unspentStatPoints ?? (stats.player.unspentStatPoints || 0);
+    const body = planAllToStat(totalPts, m.enduranceBase, stat);
+    const allocR = await ReelaxApi.allocateStats(body);
+    const ok = !!(allocR && allocR.ok);
+    m.lastRespecResult = { ok, phase: 'world-boss', at: Date.now(), body, totalPoints: totalPts, stat };
+    return m.lastRespecResult;
+  } catch (e) {
+    m.lastRespecResult = { ok: false, reason: String(e), at: Date.now() };
+    return m.lastRespecResult;
+  } finally {
+    respecInProgress = false;
+  }
+}
+
+// 报名成功（全洗弱点分支）后武装本场状态机：记录 battleAt / escapeAt，battleAt 到点洗点，结束复原。
+function armWorldBossRefill(w) {
+  if (!w || !w.boss || !w.boss.weaknessStat) return;
+  m.worldBossRespecState = {
+    sessionId: w.sessionId,
+    weak: w.boss.weaknessStat,
+    battleAt: w.battleAt ? new Date(w.battleAt).getTime() : 0,
+    escapeAt: w.escapeAt ? new Date(w.escapeAt).getTime() : 0,
+    washed: false,
+    washing: false,
+    restoring: false,
+    restoreSig: null,
+  };
+  console.log('[monitor] 世界Boss全洗弱点 已武装: 本场 battleAt=' + (w.battleAt || '-') + ' 将全洗成 ' + STAT_LABELS[m.worldBossRespecState.weak] + '，结束后复原');
+}
+
+// 每轮自动报名时同步执行一次「洗点/复原」状态推进。
+// 洗点：battleAt 已到（或已进 active）且未洗且未锁 → 真正全洗成弱点。
+// 复原：本场已洗过 且 (离开报名窗口 或 超过 escapeAt) 且 未复原 → 走 executeCompEnd 复原为原方案。
+async function autoWorldBossRespecTick(w) {
+  const st = m.worldBossRespecState;
+  if (!st) return;
+  // 进程切换/刷新后若本场已不在进行（无 session 或换场），兜底重置状态，防泄露
+  if (!w || !w.hasSession) { m.worldBossRespecState = null; return; }
+  if (w.sessionId !== st.sessionId) { m.worldBossRespecState = null; return; } // 换场，放弃旧武装
+  const now = Date.now();
+
+  // —— 洗点（受开关约束）：只有启用时才新洗点 ——
+  if (m.worldBossRespec && m.enabled) {
+    const atBattle = (st.battleAt && now >= st.battleAt) || (st.battleAt === 0 && w.inWindow);
+    if (!st.washed && !st.washing && atBattle && !w.player.isLocked) {
+      st.washing = true;
+      const r = await executeWorldBossWash(st.weak);
+      st.washing = false;
+      st.washed = !!(r && r.ok);
+      st.restoreSig = st.sessionId + '|' + (r && r.ok ? 'washed' : 'skip');
+      console.log('[monitor] 世界Boss全洗弱点 洗点' + (st.washed ? '完成' : '失败/跳过') + ': ' + ((r && r.reason) || 'ok') + ' 全投 ' + STAT_LABELS[st.weak]);
+      if (st.washed) sendWebhook('[Reelax] ⚔️ 世界Boss开战，已自动全洗成 ' + STAT_LABELS[st.weak] + '（弱点 ×200%，Boss 结束后自动复原）');
+    }
+  }
+
+  // —— 复原（不受开关约束）：只要本场已洗过，Boss 结束后必须复原，否则属性会一直困在全弱 ——
+  const bossOver = !w.inWindow || (st.escapeAt && now > st.escapeAt);
+  if (st.washed && bossOver && !st.restoring) {
+    st.restoring = true;
+    const r = await executeCompEnd(); // 复原为原方案（力量补 strengthTarget，剩余给 allocSecondary）
+    st.restoring = false;
+    const restored = !!(r && r.ok);
+    console.log('[monitor] 世界Boss全洗弱点 复原' + (restored ? '完成' : '失败: ' + ((r && r.reason) || 'unknown')) + ' → executeCompEnd');
+    if (restored) { sendWebhook('[Reelax] ⚔️ 世界Boss结束，属性已复原为原方案'); m.worldBossRespecState = null; }
+  }
 }
 
 function startWorldBossCheck() {
   if (worldBossCheckTimer) clearInterval(worldBossCheckTimer);
   worldBossCheckTimer = setInterval(() => {
-    checkWorldBoss().then(autoSelectWorldBoss);
+    checkWorldBoss().then(() => {
+      return autoWorldBossRespecTick(m.worldBoss).then(() => autoSelectWorldBoss());
+    });
   }, WORLD_BOSS_CHECK_MS);
-  // 启动即查一次并尝试自动报名
-  checkWorldBoss().then(autoSelectWorldBoss);
+  // 启动即查一次并尝试自动报名 + 推进洗点/复原状态
+  checkWorldBoss().then(() => {
+    return autoWorldBossRespecTick(m.worldBoss).then(() => autoSelectWorldBoss()).then(() => autoWorldBossRespecTick(m.worldBoss));
+  });
 }
 
 // ---------- 市场装备监测（gear watch） ----------

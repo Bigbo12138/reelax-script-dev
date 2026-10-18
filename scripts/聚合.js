@@ -30,6 +30,7 @@
     refillRetryMs: 5000,       // 补杆失败重试间隔(毫秒)
     refillSyncPaddingMs: 2000, // 补杆时刻提前量(毫秒)，容客户端/服务端时钟偏差
     travelRetryMs: 30000,      // 切图/开船同一目标重试冷却(毫秒)
+    guildTaxSelectors: ['.guild-tax-input input[type="number"]', 'dialog.guild-settings-dialog input[type="number"]'],
   };
 
   // localStorage 持久化键名
@@ -124,13 +125,19 @@
     autoDismissCompetition: true, // 赛事弹窗自动稍后处理(默认开启)
     autoCheckIn: true,         // 每日签到自动领取(默认开启)
     autoDismissOffline: true,  // 离线结算弹窗自动处理(默认开启)
+    autoGuildTax: false,       // 公会税率按时段自动开启(默认关闭)
+    guildTaxStart: '20:00',    // 公会税率开启时间段起点(北京时间 HH:MM)
+    guildTaxEnd: '22:00',      // 公会税率开启时间段终点(北京时间 HH:MM)
+    guildTaxRate: '5',         // 时间段内要设置的税率(百分数，字符串便于输入)
+    guildTaxSetDate: null,     // 持久化：当天日期(y-m-d)，记录我们在哪一天把税率设为目标值；用于跨刷新记住“已开启”状态，到点能正常还原
+    _guildTaxWindowKey: null,  // 运行时：已处理的时间窗标识，防重复点击（如 '20:00-22:00' + 当天日期）
     mapPriority: ['official', 'competition', 'followboat', 'optimal'], // 地图优先级(从高到低)：官方航线置顶(不参与选图时不生效) > 赛事 > 跟随船 > 新优选(倍率×天气鱼系数评分)；关闭useNewScoring时官方航线>赛事>跟随船>雷暴>优选(旧编号即金币评分)；可另排入 experience(经验优选)
     baitMap: {},              // 鱼饵配置 {priorityType: baitId}，key为'competition'/'tempest'/'optimal'，空=不自动切换
     currentBaitId: null,      // 当前已装备的鱼饵ID
     currentBaitType: null,    // 当前地图所属的优先级类型(用于鱼饵匹配)
     preGoldwindBaitId: null,  // 进入金风图前使用的鱼饵ID（离开金风时恢复用）
     inGoldwind: false,        // 是否处于金风地图（用于判断离开金风时恢复鱼饵）
-    collapsedSections: { priority: false, bait: false }, // 可折叠区域状态
+    collapsedSections: { priority: false, bait: false, guildtax: false }, // 可折叠区域状态
     activePage: 'status',     // 当前页面(仅内存)
     guildCompetitionSkipped: false, // 本次检查是否因未加入公会而跳过了公会赛事地图(仅内存)
     partyInfo: null,          // 组队船信息（快照 party，未组队为 null）
@@ -257,6 +264,11 @@
         autoRefill: state.autoRefill,
         autoDismissCompetition: state.autoDismissCompetition,
         autoCheckIn: state.autoCheckIn,
+        autoGuildTax: state.autoGuildTax,
+        guildTaxStart: state.guildTaxStart,
+        guildTaxEnd: state.guildTaxEnd,
+        guildTaxRate: state.guildTaxRate,
+        guildTaxSetDate: state.guildTaxSetDate,
         mapPriority: state.mapPriority,
         baitMap: state.baitMap,
         collapsedSections: state.collapsedSections,
@@ -282,6 +294,12 @@
       state.autoRefill = !!parsed.autoRefill;
       state.autoDismissCompetition = parsed.autoDismissCompetition != null ? !!parsed.autoDismissCompetition : true;
       state.autoCheckIn = parsed.autoCheckIn != null ? !!parsed.autoCheckIn : true;
+      state.autoGuildTax = parsed.autoGuildTax === true;
+      state.guildTaxStart = _validHm(parsed.guildTaxStart) ? parsed.guildTaxStart : '20:00';
+      state.guildTaxEnd = _validHm(parsed.guildTaxEnd) ? parsed.guildTaxEnd : '22:00';
+      state.guildTaxRate = (parsed.guildTaxRate != null && parsed.guildTaxRate !== '')
+        ? String(parsed.guildTaxRate) : '5';
+      state.guildTaxSetDate = parsed.guildTaxSetDate || null;
       // 迁移旧数据：确保mapPriority包含所有选项（赛事>跟船>雷暴>优选）
       // 【修复】完全尊重用户在 UI 里排定的顺序，不再强制置顶 official/competition/followboat。
       const allPriorityOptions = ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
@@ -311,8 +329,8 @@
         }
       }
       state.collapsedSections = (parsed.collapsedSections && typeof parsed.collapsedSections === 'object')
-        ? { priority: !!parsed.collapsedSections.priority, bait: !!parsed.collapsedSections.bait }
-        : { priority: false, bait: false };
+        ? { priority: !!parsed.collapsedSections.priority, bait: !!parsed.collapsedSections.bait, guildtax: !!parsed.collapsedSections.guildtax }
+        : { priority: false, bait: false, guildtax: false };
       state.autoSail = parsed.autoSail !== false;
       state.excludeMasteryInSelect = parsed.excludeMasteryInSelect !== false;
       state.useNewScoring = parsed.useNewScoring !== false;
@@ -2472,12 +2490,14 @@
     initialPollTimer = setTimeout(() => {
       initialPollTimer = null;
       checkAndSwitch();
+      if (state.autoGuildTax) checkGuildTaxSchedule(); // 公会税率时段检查
 
       // 后续检查添加随机抖动（±15%），防止惊群效应
       pollTimer = setInterval(() => {
         if (!state.isChecking) {
           const jitter = effectiveInterval * (0.85 + Math.random() * 0.3);
           setTimeout(() => checkAndSwitch(), jitter - effectiveInterval);
+          if (state.autoGuildTax) checkGuildTaxSchedule();
         }
       }, effectiveInterval);
     }, initialDelay);
@@ -2492,6 +2512,267 @@
       clearInterval(pollTimer);
       pollTimer = null;
     }
+  }
+
+  // ==================== 公会税率按时段自动开启 ====================
+
+  // 校验是否为合法 "HH:MM"（0-23 时, 0-59 分）
+  function _validHm(s) {
+    if (typeof s !== 'string') return false;
+    const m = /^(\d{1,2}):(\d{1,2})$/.exec(s.trim());
+    if (!m) return false;
+    const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+    return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+  }
+  // "HH:MM" -> 当日分钟数
+  function _hmToMin(s) {
+    const m = /^(\d{1,2}):(\d{1,2})$/.exec((s || '').trim());
+    if (!m) return 0;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  }
+
+  // 从 DOM 中模糊定位「公会税率」输入框。
+  // 公会设置面板的 ID/类名未知，采用逐步缩写匹配，并带自诊断：
+  //   默认范围：可见的 dialog/面板 优先，退化为全文档（排除本脚本自己的面板）。
+  //   命中规则：先按用户可配置的 selector 覆盖（CONFIG.guildTaxSelectors），
+  //   否则在整个范围内找：
+  //     输入框本身 value 标签/邻近文本含「税」（评分最高的那个）；
+  //     或 label/标题含「税」的容器近旁的输入框。
+  // 返回 { input, context, logInfo }；找不到 inputs 时 logInfo 记录扫描到的候选，便于精确定位。
+  function findGuildTaxInput() {
+    const overrides = CONFIG.guildTaxSelectors || [];
+    let scopeRoot = document.body;
+    // 优先在可见的 dialog / 固定面板中找税输入（更贴近公会设置界面）
+    const dialogs = Array.from(document.querySelectorAll('dialog, [role="dialog"], .modal, .guild-settings, [class*="guild-settings"], [id*="guild-setting"]'))
+      .filter((el) => el.offsetParent !== null || (el.getClientRects && el.getClientRects().length > 0));
+    if (dialogs.length) scopeRoot = dialogs[0];
+
+    // 1) 用户显式配置的选择器覆盖
+    for (const sel of overrides) {
+      let el;
+      try { el = scopeRoot.querySelector(sel); } catch (_e) { continue; }
+      if (el) return { input: el, context: scopeRoot, logInfo: '命中配置的 selector: ' + sel };
+    }
+
+    // 2) 模糊匹配：输入框邻近文本含「税」（排除本脚本自己的面板输入，避免自命中）
+    const inputs = Array.from(scopeRoot.querySelectorAll('input[type="number"], input[type="text"], input:not([type]), input'))
+      .filter((i) => !i.closest('#reelax-auto-map-panel'))
+      .filter((i) => i.offsetParent !== null || (i.getClientRects && i.getClientRects().length > 0));
+    let best = null, bestScore = 0, hits = [];
+    for (const input of inputs) {
+      const near = nearText(input, 80).text;
+      let score = 0;
+      if (/税率/.test(near)) score += 3;
+      if (/税/.test(near)) score += 1;
+      if (/公[会员]/.test(near)) score += 1;
+      if (score > 0) {
+        hits.push({ input, score, near: near.slice(0, 40) });
+        if (score > bestScore) { bestScore = score; best = input; }
+      }
+    }
+    if (best) {
+      const diag = hits.length === 1 ? '' : `（候选 ${hits.length} 个，选评分最高）`;
+      return { input: best, context: scopeRoot,
+        logInfo: `模糊命中税率输入框（评分 ${bestScore}${diag}）` };
+    }
+
+    const diag = hits.length
+      ? `存在候选但无浅命中：${hits.map((h) => h.near).join(' | ')}`
+      : '范围内未找到任何含「税」的输入框';
+    return { input: null, context: scopeRoot, logInfo: diag };
+  }
+
+  // 取元素周围最近文本（用于判断该输入框是否与「税率」标签关联）
+  function nearText(el, maxLen) {
+    let t = '', node = el;
+    for (let i = 0; i < 4 && node; i++) {
+      if (node.nodeType === 3) { t = node.textContent + t; }
+      else if (node.textContent) { t = node.textContent + t; }
+      node = node.parentElement;
+      if (t.length >= maxLen) break;
+    }
+    const prev = el.previousElementSibling ? (el.previousElementSibling.textContent || '') : '';
+    const label = el.labels && el.labels.length ? (el.labels[0].textContent || '') : '';
+    return { text: (t + ' ' + prev + ' ' + label).slice(0, maxLen) };
+  }
+
+  // 把鼠标可聚焦元素的文本设为真实原生输入并派发 input/change，触发 React 受控组件更新。
+  function setNativeValue(input, value) {
+    const proto = input.tagName === 'SELECT' ? HTMLSelectElement : HTMLInputElement;
+    const desc = Object.getOwnPropertyDescriptor(proto && proto.prototype, 'value');
+    if (desc && desc.set) {
+      desc.set.call(input, value);
+    } else {
+      input.value = value;
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // 在税率输入框附近找「保存/确认/应用」按钮并点击。找不到时返回 false 并留诊断。
+  function clickGuildTaxSave(scopeRoot, context) {
+    const btns = Array.from(scopeRoot.querySelectorAll('button, [role="button"], [class*="btn"]'))
+      .filter((b) => !b.closest('#reelax-auto-map-panel'));
+    // 1) 优先点对话框内的提交按钮（type=submit 或文本含「保存设置」）
+    let candidates = btns.filter((b) => {
+      const txt = (b.textContent || b.getAttribute('aria-label') || '').trim();
+      return b.type === 'submit' || /保存设置|保存|确认|确定|应用/.test(txt);
+    });
+    // 2) 降级：文本含「保存」的任意按钮
+    if (!candidates.length) {
+      candidates = btns.filter((b) => /保存|确认|确定|应用|提交|开启/.test((b.textContent || b.getAttribute('aria-label') || '').trim()));
+    }
+    // 优先点距离输入框近的保存按钮
+    for (const b of candidates) {
+      try { if (!b.disabled) { b.click(); return true; } } catch (_e) {}
+    }
+    // 兜底：仅在定位到的是可见对话框/面板（而非整页 body）时，才点该面板最后一个可用按钮（多数是保存）
+    const isFocusedPanel = context && context !== document.body
+      && (context.tagName === 'DIALOG' || context.tagName !== 'BODY');
+    if (!isFocusedPanel) return false;
+    const fallbacks = btns.filter((b) => !b.disabled);
+    if (fallbacks.length) {
+      const last = fallbacks[fallbacks.length - 1];
+      const txt = (last.textContent || last.getAttribute('aria-label') || '').trim();
+      if (txt === '关闭' || txt === '取消') return false; // 避免误点关闭
+      try { last.click(); return true; } catch (_e) {}
+    }
+    return false;
+  }
+
+  // SPA 内点击站内导航（不整页刷新，脚本上下文得以保留）。用于切到 /guilds 操作公会设置。
+  function spaGoto(path) {
+    if (location.pathname === path || (path === '/fishing' && location.pathname.startsWith('/fishing'))) return true;
+    const link = document.querySelector('a[href="' + path + '"]');
+    if (link && (link.getAttribute('href') === path)) { try { link.click(); } catch (_e) {} return true; }
+    location.href = path; // 兜底：整页跳转
+    return true;
+  }
+
+  // 确保公会设置对话框已打开且切到「钓鱼税率」选项卡（税率输入框只有在该 tab 下才存在）。
+  // 已知结构（经 devtools 实测）：dialog.guild-settings-dialog 内
+  //   tab：button#guild-settings-economy-tab 「钓鱼税率」
+  //   输入框：.guild-tax-input input[type="number"]（min=0 max=50 step=1）
+  //   保存：button.primary-button[type="submit"] 「保存设置」
+  // 均先按精确选择器，失败再降级模糊匹配。若「公会设置」按钮不在当前页（例如在 /fishing），
+  // 会 SPA 切到 /guilds 再操作。返回 scopeRoot（或 null）。
+  async function ensureGuildTaxPanel() {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // 打开对话框：若已存在可见的 .guild-settings-dialog 则跳过，否则点「公会设置」按钮
+    let dialog = document.querySelector('dialog.guild-settings-dialog');
+    if (!dialog || dialog.getClientRects().length === 0) {
+      let openBtn = [...document.querySelectorAll('button, [role="button"]')]
+        .find((b) => b.closest && !b.closest('#reelax-auto-map-panel') && /公会设置/.test((b.textContent || b.getAttribute('aria-label') || '')));
+      if (!openBtn && !location.pathname.startsWith('/guilds')) {
+        // 不在公会页：SPA 切到 /guilds 再找（不整页刷新，保持脚本上下文）
+        spaGoto('/guilds');
+        await sleep(1200);
+        openBtn = [...document.querySelectorAll('button, [role="button"]')]
+          .find((b) => b.closest && !b.closest('#reelax-auto-map-panel') && /公会设置/.test((b.textContent || b.getAttribute('aria-label') || '')));
+      }
+      if (openBtn) { try { openBtn.click(); } catch (_e) {} }
+      else return null;
+      await sleep(400); // 等 React 挂载对话框
+    }
+    dialog = document.querySelector('dialog.guild-settings-dialog');
+    if (!dialog) return null;
+    // 切到「钓鱼税率」tab：优先精确 id，其次含「税」的 tab
+    const tab = document.getElementById('guild-settings-economy-tab')
+      || [...dialog.querySelectorAll('[role="tab"], button')].find((t) => /钓鱼税率|税率/.test((t.textContent || '').trim()) && !t.closest('#reelax-auto-map-panel'));
+    if (tab && !(tab.getAttribute('aria-selected') === 'true' && !tab.classList.contains('focused'))) {
+      try { tab.click(); } catch (_e) {}
+      await sleep(250); // 等税率输入框随 tab 切换挂载
+    }
+    return dialog;
+  }
+
+  // 执行一次公会税率设置：找到税率输入框设为目标值并保存。
+  // 返回 { ok, reason }。reason 在失败时带上可定位的诊断信息。
+  // returnToFishing=true 时若从 /fishing 被切走，操作完会 SPA 切回 /fishing（用于自动还原，避免影响自动钓鱼）。
+  async function applyGuildTaxDom(valuePct, returnToFishing) {
+    const wasFishing = location.pathname.startsWith('/fishing');
+    await ensureGuildTaxPanel();
+    const found = findGuildTaxInput();
+    if (!found.input) {
+      log(`[公会税率] 未找到税率输入框：${found.logInfo}`, 'warn');
+      console.warn('[AutoMap][公会税率] 未找到税率输入框', found);
+      if (wasFishing && returnToFishing) { try { spaGoto('/fishing'); } catch (_e) {} }
+      return { ok: false, reason: found.logInfo };
+    }
+    try {
+      setNativeValue(found.input, String(valuePct));
+    } catch (_e) {
+      log('[公会税率] 写入税率输入框失败', 'error');
+      if (wasFishing && returnToFishing) { try { spaGoto('/fishing'); } catch (_e) {} }
+      return { ok: false, reason: '写入税率输入框失败' };
+    }
+    // 给 React 一点更新时机，再点保存
+    await new Promise((r) => setTimeout(r, 150));
+    const saved = clickGuildTaxSave(found.context || document.body, found.context);
+    // 自动归还到钓鱼页（只有自动还原路径需要）
+    if (wasFishing && returnToFishing) { try { spaGoto('/fishing'); } catch (_e) {} }
+    log(saved
+      ? `[公会税率] 已把税率设为 ${valuePct}%（${found.logInfo}）`
+      : `[公会税率] 已写入 ${valuePct}% 但未找到保存按钮：${found.logInfo}`, saved ? 'action' : 'warn');
+    return { ok: saved, reason: found.logInfo };
+  }
+
+  // 定时检查：进入 [start,end) 时间窗时把税率设为目标值；离开窗口时还原为 0。
+  // 用与赛事相同的北京时间口径（serverNowMs + 8h）。幂等：每个窗口只操作一次。
+  // 「已开启」状态同时用内存(guildTaxWindowKey)与持久化(guildTaxSetDate=today)记录，
+  // 这样页面中途刷新也能记住当天开过税，到点能正确还原；且还原失败会下轮重试。
+  async function checkGuildTaxSchedule() {
+    if (!state.autoGuildTax) return;
+    const startMin = _hmToMin(state.guildTaxStart);
+    const endMin = _hmToMin(state.guildTaxEnd);
+    if (!_validHm(state.guildTaxStart) || !_validHm(state.guildTaxEnd) || startMin === endMin) {
+      return; // 未配置成有效时段，不动作
+    }
+    const nowMin = _bjNowMin();
+    // 用当天日期当窗口标识（北京时间）
+    const d = new Date(serverNowMs() + 8 * 3600 * 1e3);
+    const dayKey = d.getUTCFullYear() + '-' + (d.getUTCMonth() + 1) + '-' + d.getUTCDate();
+    const inWindow = startMin <= endMin
+      ? (nowMin >= startMin && nowMin < endMin)
+      : (nowMin >= startMin || nowMin < endMin); // 跨午夜
+
+    // 当天是否已开启：内存标识优先，其次持久化（页面刷新后仍记得）
+    const setToday = state._guildTaxWindowKey === 'on-' + dayKey
+      || (state._guildTaxWindowKey !== 'off-' + dayKey && state.guildTaxSetDate === dayKey);
+
+    if (inWindow) {
+      if (!setToday) {
+        state._guildTaxWindowKey = 'on-' + dayKey;
+        state.guildTaxSetDate = dayKey; // 持久化，跨刷新可记忆
+        saveState();
+        log(`[公会税率] 已进入时段 ${state.guildTaxStart}-${state.guildTaxEnd}，自动设置税率 ${state.guildTaxRate}%`, 'info');
+        await applyGuildTaxDom(state.guildTaxRate);
+      }
+    } else if (setToday) {
+      // 离开窗口：还原为 0。仅当真正成功时才清除“已开启”标记，失败则下轮重试。
+      // 自动还原时若从钓鱼页被切到 /guilds，操作完会 SPA 切回 /fishing，避免影响自动钓鱼。
+      const res = await applyGuildTaxDom('0', true);
+      if (res.ok) {
+        state._guildTaxWindowKey = 'off-' + dayKey + '-' + nowMin; // 本窗口已还原，避免反复点
+        state.guildTaxSetDate = null;
+        saveState();
+        log('[公会税率] 已离开时段，自动把税率还原为 0%', 'info');
+      } else {
+        log(`[公会税率] 还原为 0% 失败，稍后重试：${res.reason}`, 'warn');
+      }
+    }
+  }
+
+  // 手动执行一次（供面板按钮/联调）：把税率设为配置值；forceRestore=true 则设为 0%。
+  async function manualGuildTaxApply(forceRestore) {
+    if (forceRestore) {
+      const res = await applyGuildTaxDom('0');
+      log(res.ok ? '[公会税率] 已手动还原为 0%' : '[公会税率] 手动还原失败：' + res.reason, res.ok ? 'info' : 'warn');
+      return res;
+    }
+    const res = await applyGuildTaxDom(state.guildTaxRate);
+    log(res.ok ? `[公会税率] 已手动设为 ${state.guildTaxRate}%` : '[公会税率] 手动设置失败：' + res.reason, res.ok ? 'success' : 'warn');
+    return res;
   }
 
   // ==================== 杆数自动补满 ====================
@@ -3336,6 +3617,45 @@
           text-align: center;
           margin-top: 6px;
         }
+        /* Guild tax */
+        #reelax-auto-map-panel .ramp-guildtax-field {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-top: 7px;
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.85);
+        }
+        #reelax-auto-map-panel .ramp-guildtax-field label { flex: 0 0 auto; }
+        #reelax-auto-map-panel .ramp-guildtax-field input[type="text"] {
+          flex: 1;
+          min-width: 0;
+          padding: 4px 7px;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.08);
+          color: rgba(255, 255, 255, 0.9);
+          font-size: 12px;
+          font-family: inherit;
+          text-align: right;
+        }
+        #reelax-auto-map-panel .ramp-guildtax-field input[type="text"]:focus {
+          outline: none;
+          border-color: ${colors.accent};
+        }
+        #reelax-auto-map-panel .ramp-guildtax-actions {
+          display: flex;
+          gap: 6px;
+          margin-top: 9px;
+        }
+        #reelax-auto-map-panel .ramp-guildtax-actions .ramp-secondary-btn {
+          flex: 1;
+          width: auto;
+          margin-top: 0;
+          padding: 5px 6px;
+          font-size: 10px;
+        }
         /* Bait list */
         #reelax-auto-map-panel .ramp-bait-list { display: grid; gap: 6px; }
         #reelax-auto-map-panel .ramp-bait-item {
@@ -3751,6 +4071,44 @@
               <input type="checkbox" role="switch" aria-label="离线结算弹窗自动处理">
               <span class="ramp-switch-track"></span>
             </span>
+          </div>
+
+          <div class="ramp-option-row" id="ramp-option-row-guildtax">
+            <span class="ramp-option-text">
+              <span>公会税率按时段自动开启</span>
+              <div class="ramp-option-desc">设定时间段内把公会税率设为配置值，离开时段自动还原为 0%（通过游戏内「公会设置」界面 DOM 操作）</div>
+            </span>
+            <span class="ramp-switch" id="ramp-guildtax-switch">
+              <input type="checkbox" role="switch" aria-label="公会税率按时段自动开启">
+              <span class="ramp-switch-track"></span>
+            </span>
+          </div>
+
+          <div class="ramp-section" id="ramp-section-guildtax">
+            <div class="ramp-collapsible-header" id="ramp-collapse-guildtax">
+              <span>公会税率设置</span>
+              <span class="ramp-collapse-arrow">›</span>
+            </div>
+            <div class="ramp-collapsible-content">
+              <div class="ramp-guildtax-field">
+                <label for="ramp-guildtax-start">开始(北京时间)</label>
+                <input type="text" id="ramp-guildtax-start" placeholder="20:00" value="">
+              </div>
+              <div class="ramp-guildtax-field">
+                <label for="ramp-guildtax-end">结束(北京时间)</label>
+                <input type="text" id="ramp-guildtax-end" placeholder="22:00" value="">
+              </div>
+              <div class="ramp-guildtax-field">
+                <label for="ramp-guildtax-rate">税率(%)</label>
+                <input type="text" id="ramp-guildtax-rate" placeholder="5" value="">
+              </div>
+              <div class="ramp-guildtax-actions">
+                <button type="button" id="ramp-guildtax-save" class="ramp-secondary-btn">保存设置</button>
+                <button type="button" id="ramp-guildtax-apply" class="ramp-secondary-btn">手动设为税率</button>
+                <button type="button" id="ramp-guildtax-restore" class="ramp-secondary-btn">手动还原为0</button>
+              </div>
+              <div class="ramp-priority-hint">执行时会自动打开公会设置并切到「钓鱼税率」选项卡，写入目标值后点「保存设置」。若执行失败，控制台会输出扫描到的结构以定位税率输入框；如需精确选择器可在 CONFIG.guildTaxSelectors 指定。</div>
+            </div>
           </div>
 
           <div class="ramp-section" id="ramp-section-priority">
@@ -4206,6 +4564,53 @@
       saveState();
       updateUI();
     });
+
+    // 公会税率按时段自动开启开关
+    document.getElementById('ramp-guildtax-switch').addEventListener('click', () => {
+      state.autoGuildTax = !state.autoGuildTax;
+      if (!state.autoGuildTax) {
+        state._guildTaxWindowKey = null; // 关闭时清空窗口标记，重开立即重新判定
+      }
+      log(state.autoGuildTax
+        ? `公会税率按时段自动开启已开启（${state.guildTaxStart}-${state.guildTaxEnd} 设为 ${state.guildTaxRate}%，离开还原 0%）`
+        : '公会税率按时段自动开启已关闭', state.autoGuildTax ? 'success' : 'info');
+      saveState();
+      updateUI();
+      if (state.autoGuildTax) checkGuildTaxSchedule();
+    });
+
+    // 公会税率设置：回填当前值 + 变更即保存
+    const gtStartEl = document.getElementById('ramp-guildtax-start');
+    const gtEndEl = document.getElementById('ramp-guildtax-end');
+    const gtRateEl = document.getElementById('ramp-guildtax-rate');
+    gtStartEl.value = state.guildTaxStart;
+    gtEndEl.value = state.guildTaxEnd;
+    gtRateEl.value = state.guildTaxRate;
+    const gtSave = () => {
+      const s = gtStartEl.value.trim(), e = gtEndEl.value.trim();
+      if (!_validHm(s) || !_validHm(e)) {
+        log('公会税率开始/结束时间需为 "HH:MM" 格式(如 20:00)', 'warn');
+        return;
+      }
+      state.guildTaxStart = s;
+      state.guildTaxEnd = e;
+      state.guildTaxRate = gtRateEl.value.trim();
+      state._guildTaxWindowKey = null; // 时段/税率变更后重新判定
+      saveState();
+      log(`公会税率设置已保存：${s}-${e} 设为 ${state.guildTaxRate}%（离开时段还原 0%）`, 'success');
+    };
+    document.getElementById('ramp-guildtax-save').addEventListener('click', gtSave);
+    gtStartEl.addEventListener('change', () => { gtSave(); updateUI(); });
+    gtEndEl.addEventListener('change', () => { gtSave(); updateUI(); });
+    gtRateEl.addEventListener('change', () => { gtSave(); updateUI(); });
+
+    // 手动执行：设为税率 / 还原为 0
+    document.getElementById('ramp-guildtax-apply').addEventListener('click', () => {
+      manualGuildTaxApply(false);
+    });
+    document.getElementById('ramp-guildtax-restore').addEventListener('click', () => {
+      manualGuildTaxApply(true);
+    });
   }
 
   function makeDraggable() {
@@ -4377,6 +4782,7 @@
     setSwitchChecked('ramp-dismiss-switch', state.autoDismissCompetition);
     setSwitchChecked('ramp-checkin-switch', state.autoCheckIn);
     setSwitchChecked('ramp-offline-switch', state.autoDismissOffline);
+    setSwitchChecked('ramp-guildtax-switch', state.autoGuildTax);
 
     // 经验优选两项开关随「船长/舵手 + 自动开船」置灰失效
     const setExpLocked = (switchId, rowId, lock) => {
@@ -4764,6 +5170,7 @@
   function applyCollapseState() {
     const prioritySection = document.getElementById('ramp-section-priority');
     const baitSection = document.getElementById('ramp-section-bait');
+    const guildtaxSection = document.getElementById('ramp-section-guildtax');
     if (prioritySection) {
       if (state.collapsedSections.priority) prioritySection.classList.add('collapsed');
       else prioritySection.classList.remove('collapsed');
@@ -4772,11 +5179,16 @@
       if (state.collapsedSections.bait) baitSection.classList.add('collapsed');
       else baitSection.classList.remove('collapsed');
     }
+    if (guildtaxSection) {
+      if (state.collapsedSections.guildtax) guildtaxSection.classList.add('collapsed');
+      else guildtaxSection.classList.remove('collapsed');
+    }
   }
 
   function bindCollapseToggles() {
     const priorityHeader = document.getElementById('ramp-collapse-priority');
     const baitHeader = document.getElementById('ramp-collapse-bait');
+    const guildtaxHeader = document.getElementById('ramp-collapse-guildtax');
     if (priorityHeader) {
       priorityHeader.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -4789,6 +5201,14 @@
       baitHeader.addEventListener('click', (e) => {
         e.stopPropagation();
         state.collapsedSections.bait = !state.collapsedSections.bait;
+        saveState();
+        applyCollapseState();
+      });
+    }
+    if (guildtaxHeader) {
+      guildtaxHeader.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.collapsedSections.guildtax = !state.collapsedSections.guildtax;
         saveState();
         applyCollapseState();
       });

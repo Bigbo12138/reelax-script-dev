@@ -4,6 +4,20 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.12.0] - 2026-10-16
+
+### 新增：世界Boss「全洗弱点」自动洗点
+- `monitor.js`：`worldBossRespec`（默认关）开启后，若「重置后全投 Boss 弱点」的期望伤害**严格大于**当前伤害最大化最优期望，则报名弱点并在 `battleAt` 开战时真实洗点到弱点（`reset→读 unspent→plan→allocate`，尊重耐力预留、计入 flat 装备/遗物加成×2.0），Boss 结束后经 `executeCompEnd` 复原为原方案。
+- 三段生命周期状态机（武装→洗点→复原）+ 与比赛洗点**互斥接管**（比赛进行中让位）+ 复用 `pityTriggerRelease`/`pauseBuiltinAllocate` 接管机制；跨刷新状态兜底重置。
+- 属性白名单 `worldBossRespecStats`（四属性多选，默认全选）：仅当弱点属勾选属性才触发，全不勾=永不触发（未勾选时 popup 提示「弱点未勾选」拦截状态）。
+- `popup.js`：世界Boss 面板显示全洗弱点状态（待洗/已洗✅/复原⏳/被白名单跳过）。
+- `options.html`/`options.js`：新增「世界Boss全洗弱点」开关与弱点属性多选。
+- `CONTEXT.md`：新增「世界Boss·洗点」域模型子上下文（weaknessStat/allInWeakness/strictBeat/respecTakeover/restorePlan/exclusiveTakeover）。
+
+### 新增：公会税率按时段自动开启
+- `scripts/聚合.js`：`autoGuildTax`（默认关）开启后，在每个轮询周期校准时段，在 `guildTaxStart`/`guildTaxEnd`（默认 20:00–22:00）内把公会税率自动设为 `guildTaxRate`（默认 5）。
+- 税率输入框采用「配置选择器覆盖 + 模糊文本命中（邻近含"税"评分最高）」定位，`setNativeValue` 走 React 受控组件真实输入事件；`guildTaxSetDate` 持久化跨刷新记住"当天已设"，避免重复点击；当天窗口用 `_guildTaxWindowKey` 去重。新增 `guildtax` 折叠区与相关设置持久化。
+
 ## [v1.11.8] - 2026-10-15
 
 ### 优化：交换填单助手·跨图组单跨度规则统一/收紧

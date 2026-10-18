@@ -28,3 +28,32 @@ _Avoid_: 价格异常、非最优(不同概念)
 
 **非最优**:
 P 不等于 M1 的单。与「可议价」是互斥的独立概念，走现有的「一键下架」流程，不进断层提示列表。
+
+---
+
+# Reelax 世界Boss·洗点 域模型
+
+子上下文，描述「世界Boss 围猎事件」的选角/洗点决策语言。用到既有词：`weaknessStat`、`isLocked`、`battleAt`、`status`(`preparing`/`active`)、`enduranceBase`、`pityTrigger`。
+
+## Language
+
+**弱点属性 (weaknessStat)**:
+本场 boss 的倍率放大属性，伤害 ×200%（世界Boss 唯一被放大的属性；防御 ×50%、其余 ×100%）。_Avoid_: 高数值属性（不等于弱点，洗点前它可能不是伤害王）。
+
+**当前期望 (currentExpected)**:
+不做洗点时，某属性 `当前总值 × 倍率` 的期望伤害。原逻辑在此取最大值选角。
+
+**全洗弱点假设 (allInWeakness)**:
+假设执行 resetStats 把可分配点数全投 boss 弱点（并扣 `enduranceBase` 预留 + 计入 flat 装备/遗物加成后的总值 × 2.0），算出的期望伤害。这是「是否值得为本次 boss 洗点」的候选收益。
+
+**胜出判据 (strictBeat)**:
+仅当 `全洗弱点假设 > 原逻辑最大当前期望`（严格大于）时，才读作「洗点更优」。相等走原逻辑不洗——洗点会打断保底全运气策略，临界时保持现状更安全。
+
+**洗点接管 (respecTakeover)**:
+执行「reset→读 unspent→plan→allocate」的动作串，并同步 `pityTriggerRelease()` 释放保底触发 + `pauseBuiltinAllocate(REALLOC_PAUSE_MS)` 停用自动加点。与既有比赛洗点同一套接管机制。
+
+**复原方案 (restorePlan)**:
+本赛季世界Boss 结束后，把属性洗回原方案（如全运气/赛后加点目标），避免全洗弱点残留顶掉保底策略。
+
+**互斥接管优先级 (exclusiveTakeover)**:
+世界Boss 洗点与比赛洗点若时段重叠(如 20 点)，用固定优先级互斥接管——同一时刻只有一方洗点，败者本轮不洗、胜者结束后按各自 `restorePlan` 复原。
