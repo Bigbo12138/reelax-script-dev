@@ -2742,11 +2742,17 @@
 
     if (inWindow) {
       if (!setToday) {
-        state._guildTaxWindowKey = 'on-' + dayKey;
-        state.guildTaxSetDate = dayKey; // 持久化，跨刷新可记忆
-        saveState();
         log(`[公会税率] 已进入时段 ${state.guildTaxStart}-${state.guildTaxEnd}，自动设置税率 ${state.guildTaxRate}%`, 'info');
-        await applyGuildTaxDom(state.guildTaxRate);
+        // 仅当真正设置成功才置「已开启」标记；失败则不置，下轮轮询重试，
+        // 避免「标了已开但实际没设上」导致当天永久跳过（漏开）。
+        const res = await applyGuildTaxDom(state.guildTaxRate);
+        if (res.ok) {
+          state._guildTaxWindowKey = 'on-' + dayKey;
+          state.guildTaxSetDate = dayKey; // 持久化，跨刷新可记忆
+          saveState();
+        } else {
+          log(`[公会税率] 设置失败，稍后重试：${res.reason}`, 'warn');
+        }
       }
     } else if (setToday) {
       // 离开窗口：还原为 0。仅当真正成功时才清除“已开启”标记，失败则下轮重试。
