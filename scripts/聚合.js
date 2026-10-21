@@ -4790,6 +4790,12 @@
     setSwitchChecked('ramp-offline-switch', state.autoDismissOffline);
     setSwitchChecked('ramp-guildtax-switch', state.autoGuildTax);
 
+    // 公会税率设置区：随开关显隐（开启显示，关闭整个区域隐藏）
+    const guildtaxSectionEl = document.getElementById('ramp-section-guildtax');
+    if (guildtaxSectionEl) {
+      guildtaxSectionEl.style.display = state.autoGuildTax ? '' : 'none';
+    }
+
     // 经验优选两项开关随「船长/舵手 + 自动开船」置灰失效
     const setExpLocked = (switchId, rowId, lock) => {
       const wrapper = document.getElementById(switchId);
