@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Reelax 保底显示 + 运气加成分析
 // @namespace    reelax-pity-display
-// @version      2.0.0
-// @description  在「自动钓鱼」面板标题后显示保底进度（奥秘/奇异 百分比 + 距硬保底剩余时间）+ 有效运气；新增：分析商店 +25% 运气加成能否把剩余时间压进 2 小时内，是则提示可购买。
+// @version      2.1.0
+// @description  在「自动钓鱼」面板标题后显示保底进度（奥秘/奇异 百分比 + 距硬保底剩余时间）+ 有效运气；商店 buff 按「启用的天气」自动购买（可勾选全部9种天气，默认仅奥秘涌流，全不勾=不买）。
 // @match        https://reelax.cn/*
 // @run-at       document-idle
 // @grant        none
@@ -45,62 +45,113 @@
   const BUFF_COOLDOWN_MS = 25 * 60 * 1000;
   const BUFF_POLL_MS = 5 * 60 * 1000;
   const BUFF_CFG_KEY = 'r1cm-buff-cfg-v1';
-  // 「仅在奥秘涌流购买」的剩余时间门槛（分钟）：
-  //   遗物币 buff（relics）：涌流剩余 < 20 分钟 → 不买
-  //   奥秘碎片 buff（fragments）：涌流剩余 < 90 分钟 → 不买
+  // 全部 9 种天气（id → 中文名），供面板勾选「启用 buff 的天气」
+  const WEATHER_LIST = [
+    ['clear', '晴朗'],
+    ['rain', '雨幕'],
+    ['gale', '强风'],
+    ['mist', '浓雾'],
+    ['heatwave', '热浪'],
+    ['tempest', '雷暴'],
+    ['wither_tide', '枯潮'],
+    ['gilded_current', '金风'],
+    ['arcane_surge', '奥秘涌流'],
+  ];
+  const DEFAULT_WEATHERS = ['arcane_surge']; // 默认勾选「奥秘涌流」
+  // 命中勾选天气时的剩余时间门槛（分钟，对所有天气一致）：
+  //   遗物币 buff（relics）：当前天气剩余 < 20 分钟 → 不买
+  //   奥秘碎片 buff（fragments）：当前天气剩余 < 90 分钟 → 不买
   const SURGE_RELIC_MIN = 20;
   const SURGE_FRAGMENT_MIN = 90;
   let buffChecked = new Set();   // 用户勾选要自动买的 productId（默认全空）
-  let buffSurgeOnly = false;     // 是否「仅在奥秘涌流时购买」
+  let buffWeathers = new Set(DEFAULT_WEATHERS); // 启用购买 buff 的天气 id 白名单（默认仅奥秘涌流）
   let buffGroupActiveAt = {};    // group -> 上次买到的时间戳（冷却防抖）
   function loadBuffChecked() {
     try {
       const o = JSON.parse(localStorage.getItem(BUFF_CFG_KEY));
       if (o && Array.isArray(o.buy) && o.buy.length) buffChecked = new Set(o.buy.filter((k) => BUFF[k]));
-      if (o) buffSurgeOnly = o.surgeOnly === true;
+      if (o && Array.isArray(o.weathers)) {
+        buffWeathers = new Set(o.weathers.filter((w) => WEATHER_LIST.some((x) => x[0] === w)));
+      } else if (o && o.surgeOnly === true) {
+        // 旧配置迁移：仅在奥秘涌流 → 天气白名单 = 奥秘涌流
+        buffWeathers = new Set(['arcane_surge']);
+      }
     } catch (_e) {}
   }
   function saveBuffChecked() {
-    try { localStorage.setItem(BUFF_CFG_KEY, JSON.stringify({ buy: [...buffChecked], surgeOnly: buffSurgeOnly })); } catch (_e) {}
+    try { localStorage.setItem(BUFF_CFG_KEY, JSON.stringify({ buy: [...buffChecked], weathers: [...buffWeathers] })); } catch (_e) {}
   }
   loadBuffChecked();
 
-  // 当前奥秘涌流剩余分钟（null=不在涌流或无法判定）。
-  // 实测页面 /api/fishing/state 里涌流不在顶层 surge，而在顶层 arcaneSacrifice.surge（{isActive, endsAt}）。
-  // 依次尝试：d.surge / d.arcaneSacrifice.surge / d.biome.weather 的 arcane_surge。
-  function surgeRemainMinFromState(d) {
-    if (d) {
-      const candidates = [d.surge, d.arcaneSacrifice && d.arcaneSacrifice.surge, d.biome && d.biome.weather];
-      for (const s of candidates) {
-        if (!s || !s.endsAt) continue;
-        const wid = s.weatherId || s.id;
-        if (wid === 'arcane_surge' || s.isActive === true || s.isActive === undefined) {
-          try {
-            const r = (new Date(s.endsAt).getTime() - Date.now()) / 60000;
-            if (r > 0) return r;
-          } catch (_e) {}
-        }
+  // 当前天气 id + 剩余分钟（用于「按天气启用 buff」）。
+  // 数据来源：
+  //   1) 奥秘涌流：/api/fishing/state 的 arcaneSacrifice.surge（{isActive, endsAt}）。
+  //   2) 普通天气：/api/biomes 里 isCurrent===true 的图的 weather（{id|weatherId, endsAt}）。
+  //      注意：/api/fishing/state 不含地图天气，普通天气必须从 /api/biomes 取，否则永远读不到。
+  // 返回 { weatherId, remainMin }；无法判定时 weatherId=null。
+  function weatherFromBiomesData(d) {
+    const list = d && (Array.isArray(d.biomes) ? d.biomes : null);
+    if (!list) return null;
+    const cur = list.find((x) => x && x.isCurrent === true) || null;
+    if (!cur || !cur.weather) return null;
+    const w = cur.weather;
+    const wid = w.weatherId || w.id || null;
+    if (!wid) return null;
+    let remainMin = null;
+    if (w.endsAt) { try { remainMin = (new Date(w.endsAt).getTime() - Date.now()) / 60000; } catch (_e) {} }
+    return { weatherId: wid, remainMin };
+  }
+  function surgeFromState(d) {
+    if (!d) return null;
+    const surgeCandidates = [d.surge, d.arcaneSacrifice && d.arcaneSacrifice.surge];
+    for (const s of surgeCandidates) {
+      if (!s || !s.endsAt) continue;
+      const wid = s.weatherId || s.id;
+      if (wid === 'arcane_surge' || s.isActive === true || s.isActive === undefined) {
+        try {
+          const r = (new Date(s.endsAt).getTime() - Date.now()) / 60000;
+          if (r > 0) return { weatherId: 'arcane_surge', remainMin: r };
+        } catch (_e) {}
       }
     }
     return null;
   }
-  function surgeRemainMinFromSnapshot() {
+  function currentWeatherFromState(d) {
+    if (!d) return { weatherId: null, remainMin: null };
+    // 1) 奥秘涌流优先（叠加在普通天气之上，影响最大）
+    const surge = surgeFromState(d);
+    if (surge) return surge;
+    // 2) 普通天气：biomes 当前图的 weather
+    const bw = weatherFromBiomesData(d);
+    if (bw) return bw;
+    // 3) 兼容：若传入的已是 biome 结构（getSnapshot 等）
+    const w = d.biome && d.biome.weather;
+    if (w) {
+      const wid = w.weatherId || w.id || null;
+      let remainMin = null;
+      if (w.endsAt) { try { remainMin = (new Date(w.endsAt).getTime() - Date.now()) / 60000; } catch (_e) {} }
+      return { weatherId: wid, remainMin };
+    }
+    // 4) 顶层 weatherId（部分接口快照直接带）
+    if (d.weatherId) {
+      let remainMin = null;
+      return { weatherId: d.weatherId, remainMin };
+    }
+    return { weatherId: null, remainMin: null };
+  }
+  function currentWeatherFromSnapshot() {
     try {
       const snap = window.arcaneReelax && window.arcaneReelax.getSnapshot && window.arcaneReelax.getSnapshot();
-      if (snap) {
-        const candidates = [snap.surge, snap.arcaneSacrifice && snap.arcaneSacrifice.surge, snap.biome && snap.biome.weather];
-        for (const s of candidates) {
-          if (!s || !s.endsAt) continue;
-          try {
-            const r = (new Date(s.endsAt).getTime() - Date.now()) / 60000;
-            if (r > 0) return r;
-          } catch (_e) {}
-        }
-      }
-    } catch (_e) {}
-    return null;
+      return currentWeatherFromState(snap);
+    } catch (_e) { return { weatherId: null, remainMin: null }; }
   }
-
+  // 从游戏内存快照读当前图天气（零请求，最可靠）：snapshot.biomes[] 每项带 isCurrent/weather。
+  function weatherFromSnapshotBiomes() {
+    try {
+      const snap = window.arcaneReelax && window.arcaneReelax.getSnapshot && window.arcaneReelax.getSnapshot();
+      return snap ? weatherFromBiomesData(snap) : null;
+    } catch (_e) { return null; }
+  }
   // ---------- 签名（与扩展 monitor.js / SKILL.md §2.5 一致） ----------
   let proof = null;
   function b64url(buf){ return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
@@ -299,17 +350,29 @@
       const res = await signedGet('/api/fishing/state');
       if (!res.ok) return { ok: false, error: 'status ' + res.status };
       const d = await res.json();
-      // 【debug】打印实际拿到的涌流结构与 surgeRemainMin，定位为何判非涌流
-      try {
-        console.log('[Reelax 保底][dbg] fishing/state keys=', Object.keys(d || {}),
-          '| surge=', JSON.stringify(d && d.surge),
-          '| arcaneSacr.surge=', d && d.arcaneSacrifice ? JSON.stringify(d.arcaneSacrifice.surge) : 'none',
-          '| nextBuffBoundaryAt=', d && d.nextBuffBoundaryAt);
-      } catch (_e) {}
       const active = Array.isArray(d && d.activeBuffs) ? d.activeBuffs : [];
-      const srm = surgeRemainMinFromState(d);
-      console.log('[Reelax 保底][dbg] surgeRemainMinFromState=', srm);
-      return { ok: true, active, surgeRemainMin: srm };
+      // 天气判定：涌流来自 fishing/state；普通天气优先读游戏内存快照 biomes（零请求），
+      // 快照无数据时再请求 /api/biomes 兜底。
+      let weatherId = null;
+      let weatherRemainMin = null;
+      const surge = surgeFromState(d);
+      if (surge) {
+        weatherId = surge.weatherId; weatherRemainMin = surge.remainMin;
+      } else {
+        let bw = weatherFromSnapshotBiomes();
+        if (!bw) {
+          let biomesData = null;
+          try {
+            const br = await signedGet('/api/biomes');
+            if (br.ok) biomesData = await br.json();
+          } catch (_e) {}
+          bw = biomesData ? weatherFromBiomesData(biomesData) : null;
+        }
+        if (bw) { weatherId = bw.weatherId; weatherRemainMin = bw.remainMin; }
+      }
+      console.log('[Reelax 保底][dbg] currentWeather=', weatherId, 'remainMin=', weatherRemainMin,
+        '| surge=', surge ? JSON.stringify(surge) : 'none');
+      return { ok: true, active, weatherId, weatherRemainMin };
     } catch (e) { return { ok: false, error: String(e) }; }
   }
   function playerBalance() {
@@ -326,14 +389,30 @@
     const bal = playerBalance();
     const now = Date.now();
     const results = [];
-    // 「仅在奥秘涌流时购买」：剩余分钟不足则对应币种不买。
-    //   遗物币 buff 需涌流剩余 ≥ 20 分钟；奥秘碎片 buff 需 ≥ 90 分钟。
-    let surgeRemainMin = (buffSurgeOnly && state.ok) ? state.surgeRemainMin : null;
-    if (buffSurgeOnly && surgeRemainMin == null) surgeRemainMin = surgeRemainMinFromSnapshot();
-    const surgeOn = buffSurgeOnly && surgeRemainMin != null && surgeRemainMin > 0;
-    if (buffSurgeOnly) console.log('[Reelax 保底] buffSurgeOnly', buffSurgeOnly, 'surgeRemainMin', surgeRemainMin, 'surgeOn', surgeOn, 'stateOk', state.ok, 'stateSV', state.surgeRemainMin);
-    if (buffSurgeOnly && !surgeOn) {
-      results.push({ group: 'all', ok: 'surge', msg: '非奥秘涌流或涌流剩余不足，本次不购买' });
+    // 天气白名单：只有当前天气命中勾选天气时才购买。
+    //   - 白名单为空 → 任何天气都不买（改后规则）。
+    //   - 当前天气 ∉ 白名单 → 不买。
+    //   - 命中后按「当前天气剩余分钟」套门槛：遗物币需 ≥ 20 分钟，碎片需 ≥ 90 分钟。
+    let weatherId = state.ok ? state.weatherId : null;
+    let weatherRemainMin = (state.ok ? state.weatherRemainMin : null);
+    if (!weatherId || weatherRemainMin == null) {
+      const snap = currentWeatherFromSnapshot();
+      if (!weatherId) weatherId = snap.weatherId;
+      if (weatherRemainMin == null) weatherRemainMin = snap.remainMin;
+    }
+    const weatherName = (WEATHER_LIST.find((x) => x[0] === weatherId) || [null, weatherId])[1];
+    if (!buffWeathers.size) {
+      results.push({ group: 'all', ok: 'weather', msg: '未勾选任何天气，本次不购买 buff' });
+      return { active: activeNow, results };
+    }
+    if (!weatherId || !buffWeathers.has(weatherId)) {
+      results.push({ group: 'all', ok: 'weather', msg: '当前天气' + (weatherName || '未知') + '不在启用列表，本次不购买' });
+      return { active: activeNow, results };
+    }
+    const weatherOn = weatherRemainMin != null && weatherRemainMin > 0;
+    console.log('[Reelax 保底] buff 天气', weatherId, weatherName, '剩余', weatherRemainMin, '启用列表', [...buffWeathers]);
+    if (!weatherOn) {
+      results.push({ group: 'all', ok: 'weather', msg: '当前天气剩余不足或无法判定，本次不购买' });
       return { active: activeNow, results };
     }
     for (const group of BUFF_GROUPS.map((g) => g[0])) {
@@ -344,10 +423,10 @@
       for (const k of chosen) {
         const cfg = BUFF[k];
         if (buffGroupActiveAt[group] && now - buffGroupActiveAt[group] < BUFF_COOLDOWN_MS) { results.push({ k, ok: 'cooldown', msg: cfg.name + ' 冷却中' }); continue; }
-        // 涌流剩余时间门槛（仅 buffSurgeOnly 生效；此刻 surgeOn 已保证在涌流内）
-        if (surgeOn) {
-          if (cfg.currency === 'relics' && surgeRemainMin < SURGE_RELIC_MIN) { results.push({ k, ok: 'surge', msg: cfg.name + ' 涌流仅剩' + Math.floor(surgeRemainMin) + '分(<' + SURGE_RELIC_MIN + '分)，遗物buff不买' }); continue; }
-          if (cfg.currency === 'fragments' && surgeRemainMin < SURGE_FRAGMENT_MIN) { results.push({ k, ok: 'surge', msg: cfg.name + ' 涌流仅剩' + Math.floor(surgeRemainMin) + '分(<' + SURGE_FRAGMENT_MIN + '分)，碎片buff不买' }); continue; }
+        // 当前天气剩余时间门槛（此刻 weatherOn 已保证 >0）
+        if (weatherOn) {
+          if (cfg.currency === 'relics' && weatherRemainMin < SURGE_RELIC_MIN) { results.push({ k, ok: 'surge', msg: cfg.name + ' ' + (weatherName || '天气') + '仅剩' + Math.floor(weatherRemainMin) + '分(<' + SURGE_RELIC_MIN + '分)，遗物buff不买' }); continue; }
+          if (cfg.currency === 'fragments' && weatherRemainMin < SURGE_FRAGMENT_MIN) { results.push({ k, ok: 'surge', msg: cfg.name + ' ' + (weatherName || '天气') + '仅剩' + Math.floor(weatherRemainMin) + '分(<' + SURGE_FRAGMENT_MIN + '分)，碎片buff不买' }); continue; }
         }
         const balance = cfg.currency === 'fragments' ? bal.fragments : bal.relics;
         if (balance != null && balance < cfg.price) { results.push({ k, ok: 'balance', msg: cfg.name + ' 余额不足' }); continue; }
@@ -401,14 +480,20 @@
           '<span>' + c.name + '（' + c.price + (c.currency === 'relics' ? ' 遗物' : ' 碎片') + '）</span></label>';
       }).join('');
     }).join('');
+    const weatherHtml = '<div style="margin:3px 0 2px;font-size:12px;color:#ffb25a;font-weight:600;">启用天气（勾选的天气才买 buff，全不勾=不买）</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-bottom:6px;">'
+      + WEATHER_LIST.map(([wid, wname]) =>
+          '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">'
+          + '<input type="checkbox" data-weather="' + wid + '"' + (buffWeathers.has(wid) ? ' checked' : '') + ' style="cursor:pointer;"/>'
+          + '<span>' + wname + '</span></label>').join('')
+      + '</div>'
+      + '<div style="font-size:11px;color:#6e7681;margin-bottom:6px;">命中后：遗物 buff 需天气剩≥20分，碎片 buff 需剩≥90分</div>';
     p.innerHTML = ''
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
       + '<b style="font-size:13px;">🏪 遗物商店 buff（勾选才买）</b>'
       + '<span id="r1cm-buff-close" style="cursor:pointer;color:#8b949e;font-size:12px;">✕</span></div>'
       + '<div id="r1cm-buff-status" style="font-size:12px;color:#58a6ff;margin-bottom:6px;word-break:break-all;"></div>'
-      + '<label style="display:flex;align-items:center;gap:6px;margin:3px 0 6px;font-size:12px;color:#ffb25a;cursor:pointer;">'
-      + '<input type="checkbox" id="r1cm-buff-surgeonly"' + (buffSurgeOnly ? ' checked' : '') + ' style="cursor:pointer;"/>'
-      + '<span>仅在奥秘涌流时购买（遗物需涌流剩≥20分；碎片需剩≥90分）</span></label>'
+      + weatherHtml
       + groupsHtml
       + '<button id="r1cm-buff-buy" style="margin-top:8px;width:100%;padding:7px;border:none;border-radius:6px;background:#ff8c1a;color:#fff;font-size:13px;cursor:pointer;">立即购买已勾选</button>'
       + '<div id="r1cm-buff-result" style="margin-top:6px;font-size:12px;color:#8b949e;max-height:90px;overflow:auto;"></div>';
@@ -422,8 +507,11 @@
     const closeBtn = document.getElementById('r1cm-buff-close');
     if (closeBtn) closeBtn.addEventListener('click', closeBuffPanel);
     // 勾选即自动保存（本地持久化），不用单独点保存
-    const surgeEl = document.getElementById('r1cm-buff-surgeonly');
-    if (surgeEl) surgeEl.addEventListener('change', () => { buffSurgeOnly = surgeEl.checked; saveBuffChecked(); refreshStatus(); });
+    p.querySelectorAll('input[data-weather]').forEach((cb) => cb.addEventListener('change', () => {
+      const next = new Set();
+      p.querySelectorAll('input[data-weather]:checked').forEach((c) => next.add(c.getAttribute('data-weather')));
+      buffWeathers = next; saveBuffChecked(); refreshStatus();
+    }));
     p.querySelectorAll('input[data-buff]').forEach((cb) => cb.addEventListener('change', () => {
       const next = new Set();
       p.querySelectorAll('input[data-buff]:checked').forEach((c) => next.add(c.getAttribute('data-buff')));
@@ -468,7 +556,7 @@
       const out = await buyCheckedBuffs();
       for (const x of out.results) console.log('[Reelax 保底] Buff', x.k, x.ok, x.msg);
     } else {
-      console.log('[Reelax 保底] buffTick 跳过：未勾选任何 buff，buffChecked=', [...buffChecked], 'surgeOnly=', buffSurgeOnly);
+      console.log('[Reelax 保底] buffTick 跳过：未勾选任何 buff，buffChecked=', [...buffChecked], 'weathers=', [...buffWeathers]);
     }
     if (buffPanelEl) await renderBuffStatus();
   }
