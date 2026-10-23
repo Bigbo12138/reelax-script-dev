@@ -347,19 +347,26 @@
   }
   async function fetchActiveBuffs() {
     try {
-      const res = await signedGet('/api/fishing/state');
-      if (!res.ok) return { ok: false, error: 'status ' + res.status };
-      const d = await res.json();
-      const active = Array.isArray(d && d.activeBuffs) ? d.activeBuffs : [];
-      // 天气判定：涌流来自 fishing/state；普通天气优先读游戏内存快照 biomes（零请求），
-      // 快照无数据时再请求 /api/biomes 兜底。
+      // 注意：/api/fishing/state 可能被服务端 403 拒绝（签名失效等）。此时不能整体放弃，
+      // 天气改用游戏内存快照（零请求）、已生效 buff 也尽量从快照兜底。
+      let d = null;
+      let stateOk = false;
+      try {
+        const res = await signedGet('/api/fishing/state');
+        if (res.ok) { d = await res.json(); stateOk = true; }
+        else console.warn('[Reelax 保底] fishing/state 非 200：', res.status, '- 改用快照兜底');
+      } catch (e) {
+        console.warn('[Reelax 保底] fishing/state 请求异常：', e, '- 改用快照兜底');
+      }
+      let active = Array.isArray(d && d.activeBuffs) ? d.activeBuffs : [];
+      // 天气判定：涌流优先（state.surge / arcaneSacrifice.surge / 当前图 weather 为 arcane_surge），
+      // 否则取普通天气（优先游戏内存快照 biomes，零请求；无则请求 /api/biomes 兜底）。
       let weatherId = null;
       let weatherRemainMin = null;
       const surge = surgeFromState(d);
-      if (surge) {
-        weatherId = surge.weatherId; weatherRemainMin = surge.remainMin;
-      } else {
-        let bw = weatherFromSnapshotBiomes();
+      let bw = null;
+      if (!surge) {
+        bw = weatherFromSnapshotBiomes();
         if (!bw) {
           let biomesData = null;
           try {
@@ -368,10 +375,24 @@
           } catch (_e) {}
           bw = biomesData ? weatherFromBiomesData(biomesData) : null;
         }
-        if (bw) { weatherId = bw.weatherId; weatherRemainMin = bw.remainMin; }
+      }
+      if (surge) {
+        weatherId = surge.weatherId; weatherRemainMin = surge.remainMin;
+      } else if (bw) {
+        weatherId = bw.weatherId; weatherRemainMin = bw.remainMin;
+      }
+      // 快照兜底已生效 buff（state 拿不到时避免重复购买判断失效）
+      if (!active.length) {
+        try {
+          const s = window.arcaneReelax && window.arcaneReelax.getSnapshot && window.arcaneReelax.getSnapshot();
+          if (s && Array.isArray(s.activeBuffs)) active = s.activeBuffs;
+          else if (s && s.fishing && Array.isArray(s.fishing.activeBuffs)) active = s.fishing.activeBuffs;
+        } catch (_e) {}
       }
       console.log('[Reelax 保底][dbg] currentWeather=', weatherId, 'remainMin=', weatherRemainMin,
-        '| surge=', surge ? JSON.stringify(surge) : 'none');
+        '| stateOk=', stateOk,
+        '| surge=', surge ? JSON.stringify(surge) : 'none',
+        '| arcaneSacrifice=', d && d.arcaneSacrifice ? JSON.stringify(d.arcaneSacrifice) : 'none');
       return { ok: true, active, weatherId, weatherRemainMin };
     } catch (e) { return { ok: false, error: String(e) }; }
   }

@@ -4,12 +4,19 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.13.1] - 2026-10-23
+
+### 修复：buff 天气判定在 fishing/state 403 时整体失效（含勾选的奥秘涌流也不买）
+- `scripts/保底显示.js`：`fetchActiveBuffs` 不再因 `/api/fishing/state` 返回 403 而直接放弃。该接口失败时改用游戏内存快照 `getSnapshot().biomes[]` 中 `isCurrent` 图的 `weather`（实测字段 `id` + `endsAt`）判定当前天气；已生效 buff 亦从快照兜底，避免重复购买。签名接口失败仅告警不阻断。
+- `manifest.json`：1.13.0 → 1.13.1。
+
 ## [v1.13.0] - 2026-10-22
 
 ### 新增：商店 buff 按「启用天气」自动购买（可多选天气）
 - `scripts/保底显示.js`：原「仅在奥秘涌流时购买」单选框改为**天气多选白名单**，可勾选全部 9 种天气（晴朗/雨幕/强风/浓雾/热浪/雷暴/枯潮/金风/奥秘涌流），默认勾选「奥秘涌流」。
 - 行为判定：`buffTick` 每次拉取 `/api/fishing/state` 取涌流、并从地图数据取普通天气，决定是否购买——**当前天气命中勾选才买；全部不勾 = 任何天气都不买**（旧版"不勾 = 全买"行为取消）。
 - 修复：普通天气（如雷暴）不购买。原实现从 `/api/fishing/state` 读 `biome.weather`，但该接口不含地图天气（仅含 `arcaneSacrifice.surge`），导致除涌流外永远判定"当前天气未知"而不买。改为：涌流仍读 `arcaneSacrifice.surge`；普通天气优先读游戏内存快照 `getSnapshot().biomes[]` 中 `isCurrent` 图的 `weather`（零请求），无快照时再请求 `/api/biomes` 兜底。
+- 修复：`/api/fishing/state` 返回 403（签名失效）时整体放弃导致**连勾选的奥秘涌流也不买**。改为该接口失败不中止：天气改从内存快照 `biomes[].weather` 读取（实测字段为 `id`+`endsAt`，可正常判定），已生效 buff 也尽量从快照兜底。
 - 命中后沿用原剩余时间门槛：遗物 buff 需当前天气剩余 ≥ 20 分钟，碎片 buff 需 ≥ 90 分钟。
 - 配置迁移：旧 `surgeOnly === true` 自动迁移为天气白名单 `['arcane_surge']`；存储字段 `surgeOnly` → `weathers`。
 - `manifest.json`：1.12.2 → 1.13.0。
