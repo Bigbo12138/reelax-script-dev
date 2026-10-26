@@ -114,6 +114,27 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       return new Set(o.ids);
     } catch (_e) { return null; }
   }
+  // 专精等级 <fishId, level> 持久化（localStorage）。捡漏恢复时本地秒读即可标 LV，
+  // 不必等 /api/mastery 网络往返，避免「LV 显示很慢 / 需关窗重开才显示」。
+  const MASTERY_LVL_KEY = 'r1cm-mastery-level';
+  function saveMasteryLevels(map) {
+    try {
+      const obj = {};
+      for (const [k, v] of map.entries()) obj[k] = v;
+      localStorage.setItem(MASTERY_LVL_KEY, JSON.stringify({ ts: Date.now(), lv: obj }));
+    } catch (_e) {}
+  }
+  // 返回 Map 或 null
+  function loadMasteryLevels() {
+    try {
+      const o = JSON.parse(localStorage.getItem(MASTERY_LVL_KEY) || 'null');
+      if (!o || typeof o !== 'object' || !o.lv || typeof o.lv !== 'object') return null;
+      if (Date.now() - o.ts > MASTERY_CACHE_TTL) return null;
+      const m = new Map();
+      for (const k of Object.keys(o.lv)) if (typeof o.lv[k] === 'number') m.set(k, o.lv[k]);
+      return m.size ? m : null;
+    } catch (_e) { return null; }
+  }
   // ---------- 捡漏筛选/勾选控件持久化（localStorage，关窗重开恢复） ----------
   const BARGAIN_CFG_KEY = 'r1cm-bargain-cfg';
   function saveBargainCfg() {
@@ -2867,9 +2888,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       collectLevel(d, m);
       _masteryLvl = m;
       _masteryLvlTs = Date.now();
+      saveMasteryLevels(m); // 持久化，供下次恢复本地秒读 LV
       return m;
     }
-    return _masteryLvl || m; // 获取失败：沿用缓存；无缓存则返回空 Map（不缓存）
+    // 获取失败：优先本会话缓存，其次 localStorage 持久化缓存；都无则返回空 Map（不缓存）
+    if (_masteryLvl) return _masteryLvl;
+    const lc = loadMasteryLevels();
+    if (lc) { _masteryLvl = lc; _masteryLvlTs = Date.now(); return lc; }
+    return m;
   }
   function collectLevel(node, map, depth) {
     if (node == null || depth > 8) return;
@@ -2929,31 +2955,38 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     //    先用「本地持久化专精集合」秒出 * 标记，再把 /api/mastery×2 与 /api/market/my-orders
     //    拉到的数据后台并行补齐后重渲染（仅影响 * / LV / 已求，不影响扫描本身）。——
     let mset = loadMasteryIds() || null; // 本地持久化专精集合（瞬读）；null=暂无本地数据待后台拉
-    const lvlMap = new Map();            // 专精等级：后台拉取后填充
+    const lvlMap = loadMasteryLevels() || new Map(); // 专精等级：先本地持久化秒读，后台再刷新
     let myBuy = new Set();               // 已求：后台刷新后填充
     // 仅「只拉专精鱼」才需要真实 /api/mastery 才能筛得出目标 → 这种情况等这 3 个网络请求（并行）。
     // 普通扫描：立刻用本地数据开始，3 个请求全部放后台回调里刷新标记即可。
-    const [mm] = await (onlyMastery
+    const [mm, ml0, mb0] = await (onlyMastery
       ? Promise.all([masteryFishIds(), masteryLevelMap(), myActiveBuyFishIds()])
       : [null, null, null]);
     if (onlyMastery) {
       if (mm) { mset = mm; }            // 专精集合就绪（可能此刻才有本地）
+      if (ml0) for (const [k, v] of ml0.entries()) lvlMap.set(k, v);
+      if (mb0) myBuy = mb0;
       targets = targets.filter((f) => mset && mset.has(f.fishId));
     }
     if (!targets.length) {
       if (st) st.textContent = onlyMastery ? 'ℹ️ 该条件下没有专精鱼' : 'ℹ️ 该条件下没有鱼';
       return;
     }
-    // 后台并行补齐专精/等级/已求（普通扫描非阻塞）：各自就绪即覆写即时值并重渲染
+    // 后台并行补齐专精/等级/已求（普通扫描非阻塞）：各自就绪即各自重渲染，
+    // 避免 LV / 已求 被最慢的那个请求拖住、或我的求购单回来却不刷新。
     if (!onlyMastery) {
       (async () => {
-        const [mf, ml] = await Promise.all([masteryFishIds(), masteryLevelMap()]);
-        if (mf) mset = mf;
-        if (ml) for (const [k, v] of ml.entries()) lvlMap.set(k, v);
-        renderBargainList();
-        saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
+        const mf = await masteryFishIds();
+        if (mf) { mset = mf; bargainState.masterySet = mset; renderBargainList(); saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null); }
       })();
-      (async () => { const mb = await myActiveBuyFishIds(); if (mb) myBuy = mb; })();
+      (async () => {
+        const ml = await masteryLevelMap();
+        if (ml) { for (const [k, v] of ml.entries()) lvlMap.set(k, v); renderBargainList(); }
+      })();
+      (async () => {
+        const mb = await myActiveBuyFishIds();
+        if (mb) { myBuy = mb; renderBargainList(); saveBargainCache(rarity, sorted, Array.from(myBuy)); }
+      })();
     }
     console.log(TAG, `捡漏: rarity=${rarity}, biome=${biome}, allFish=${allFish.length}, targets=${targets.length}, onlyMastery=${onlyMastery}`);
     const rarityName = isAll ? '全部品级' : objBargainRarityName(rarity);
@@ -3245,7 +3278,7 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
     // 立即渲染：先用本地可同步拿到的数据（持久化专精集合）秒出列表，避免被 3 个网络请求拖慢。
     // 随后各份网络数据就绪后再重渲染一次补齐 * / LV / 已求标记。
     let mset = loadMasteryIds(); // 优先本地（瞬读）；无则由下方异步拉取后补
-    let lvlMap = new Map();
+    let lvlMap = loadMasteryLevels() || new Map(); // 专精等级：先本地持久化秒读 LV
     // 用扫描时持久化的「我的求购」集合秒标「已求」（避免一次网络失败就丢标）；后台再刷新
     let myBuy = new Set(Array.isArray(cache.myBuyIds) ? cache.myBuyIds : []);
     const render = () => {
@@ -3307,20 +3340,21 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
     };
     bargainState = { sorted: sorted, checked: checkedBoxes, render: render, masterySet: mset };
     if (el('rlb-tab-rarity')) el('rlb-tab-rarity').value = rarity;
-    render(); // 先秒出本地缓存列表（含持久化的专精 *）
+    render(); // 先秒出本地缓存列表（含持久化的专精 * 与 LV）
     if (st) st.textContent = `已恢复上次扫描：共 ${sorted.length} 种「${rarityName}」鱼（30 分钟内有效）`;
-    // 后台异步补齐最新数据：专精集合 / 专精等级 / 我的求购，就绪后再重渲染一次（不阻塞列表显示）
+    // 后台异步补齐最新数据：专精集合 / 专精等级 / 我的求购，各自就绪即各自重渲染
+    // （不阻塞列表显示，也不互相拖慢 LV / 已求）。
     (async () => {
-      const [fmset, fmap, fbuy] = await Promise.all([
-        masteryFishIds(),
-        masteryLevelMap(),
-        myActiveBuyFishIds(),
-      ]);
-      if (fmset) mset = fmset;
-      if (fmap) lvlMap = fmap;
-      if (fbuy) myBuy = fbuy;
-      bargainState.masterySet = mset;
-      render();
+      const fmset = await masteryFishIds();
+      if (fmset) { mset = fmset; bargainState.masterySet = mset; render(); }
+    })();
+    (async () => {
+      const fmap = await masteryLevelMap();
+      if (fmap) { lvlMap = fmap; render(); }
+    })();
+    (async () => {
+      const fbuy = await myActiveBuyFishIds();
+      if (fbuy) { myBuy = fbuy; render(); saveBargainCache(rarity, sorted, Array.from(myBuy)); }
     })();
   }
 
