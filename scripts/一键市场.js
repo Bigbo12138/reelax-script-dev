@@ -281,8 +281,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const savedRars = (saved.rarities && saved.rarities.length) ? saved.rarities : DEFAULT_RARITIES;
     const rarChips = RARITY_ORDER.map((r) => {
       const checked = savedRars.includes(r);
-      return `<label style="margin-right:10px;font-size:13px;display:inline-flex;align-items:center;gap:3px;vertical-align:middle;line-height:1;cursor:pointer;">
-        <input type="checkbox" data-rar="${r}" ${checked ? 'checked' : ''} style="cursor:pointer;"/><span>${RARITY_CN[r] || r}</span></label>`;
+      return `<label style="margin-right:10px;font-size:13px;display:inline-flex;align-items:center;gap:4px;height:18px;line-height:18px;cursor:pointer;">
+        <input type="checkbox" data-rar="${r}" ${checked ? 'checked' : ''} style="width:14px;height:14px;margin:0;cursor:pointer;"/><span style="height:18px;line-height:18px;display:inline-flex;align-items:center;">${RARITY_CN[r] || r}</span></label>`;
     }).join('');
     const savedMinQty = (saved.minQty != null) ? saved.minQty : 50;
     const savedAdj = (saved.adj != null) ? saved.adj : -1;

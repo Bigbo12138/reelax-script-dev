@@ -496,17 +496,17 @@
       const opts = Object.keys(BUFF).filter((k) => BUFF[k].group === grp);
       return '<div style="margin:6px 0 2px;font-size:12px;color:#8b949e;">' + label + '</div>' + opts.map((k) => {
         const c = BUFF[k];
-        return '<label style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:13px;cursor:pointer;">' +
-          '<input type="checkbox" data-buff="' + k + '"' + (buffChecked.has(k) ? ' checked' : '') + ' style="cursor:pointer;"/>' +
-          '<span>' + c.name + '（' + c.price + (c.currency === 'relics' ? ' 遗物' : ' 碎片') + '）</span></label>';
+        return '<label style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:13px;line-height:18px;height:18px;cursor:pointer;">' +
+          '<input type="checkbox" data-buff="' + k + '"' + (buffChecked.has(k) ? ' checked' : '') + ' style="width:14px;height:14px;margin:0;cursor:pointer;"/>' +
+          '<span style="height:18px;line-height:18px;display:inline-flex;align-items:center;">' + c.name + '（' + c.price + (c.currency === 'relics' ? ' 遗物' : ' 碎片') + '）</span></label>';
       }).join('');
     }).join('');
     const weatherHtml = '<div style="margin:3px 0 2px;font-size:12px;color:#ffb25a;font-weight:600;">启用天气（勾选的天气才买 buff，全不勾=不买）</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-bottom:6px;">'
       + WEATHER_LIST.map(([wid, wname]) =>
-          '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">'
-          + '<input type="checkbox" data-weather="' + wid + '"' + (buffWeathers.has(wid) ? ' checked' : '') + ' style="cursor:pointer;"/>'
-          + '<span>' + wname + '</span></label>').join('')
+          '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:16px;height:16px;cursor:pointer;">'
+          + '<input type="checkbox" data-weather="' + wid + '"' + (buffWeathers.has(wid) ? ' checked' : '') + ' style="width:14px;height:14px;margin:0;cursor:pointer;"/>'
+          + '<span style="height:16px;line-height:16px;display:inline-flex;align-items:center;">' + wname + '</span></label>').join('')
       + '</div>'
       + '<div style="font-size:11px;color:#6e7681;margin-bottom:6px;">命中后：遗物 buff 需天气剩≥20分，碎片 buff 需剩≥90分</div>';
     p.innerHTML = ''
