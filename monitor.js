@@ -2891,33 +2891,64 @@ function worldBossStatMultipliers(boss) {
   return m;
 }
 
-// —— 纯函数：全员「全洗到 boss 弱点」假设的期望伤害 ——
-// snap: { totals, base, unspent }（worldBossPlayerSnapshot 产物）。
-// 逻辑：假设执行 resetStats → base 清零、可用池 = unspent + Σbase；
-//   · 弱点属性全洗后总值 ≈ flat(装备/遗物对该属性的加成) + (池 − enduranceBase)；
-//   · 期望伤害 = 全洗后弱点总值 × 2.0（弱点恒 ×200%）。
-// boss 无弱点时不可洗点 → 返回 null。
-function computeWorldBossAllIn(boss, snap, enduranceBase) {
-  if (!boss || !boss.weaknessStat) return null;
-  const weak = boss.weaknessStat;
+// —— 纯函数：洗点后「各属性可支配点数分布」的伤害表 ——
+// 核心口径（用户指定）：
+//   洗点后 base 清零、可用池 pool = unspent + Σbase（仅计入用户勾选的属性，耐力按 enduranceBase 预留）；
+//   若把 pool 全部投到某一属性 X，则 X 的洗后总值 = flatX + pool，其余属性只有 flat(=total−base)。
+//   伤害 = 洗后属性值 × 该属性倍率（弱点×2 / 普通×1 / 防御×0.5）。
+// 例：boss 弱点=耐力，力量/智力/运气各 base 1000、可支配 1000：
+//   全投力量 → 力量(1000+1000)×50%=1000，智力 1000×100%=1000，耐力 1000×200%=2000 …
+// 返回 null（无法判定）的条件：无 boss / 无 snap / 用户未勾选任何属性。
+// 返回 { weak, pool, reserve, baseSum, candidates:[{stat, after, exp, isWeak, allowed}], best, poolDist }
+function computeWorldBossAllIn(boss, snap, enduranceBase, allowed) {
   const base = snap ? snap.base : null;
   const totals = snap ? snap.totals : null;
   if (!base || !totals) return null;
-  const baseSum = STAT_KEYS.reduce((s, k) => s + (base[k] || 0), 0);
-  const pool = Math.max(0, (snap.unspent | 0) + baseSum);   // 全洗后可用点数
-  const reserve = Math.max(0, Math.min(enduranceBase || 0, pool)); // 尊重耐力预留
-  const flatWeak = Math.max(0, (totals[weak] || 0) - (base[weak] || 0)); // 该属性装备/遗物加成
-  const allInTotal = flatWeak + (pool - reserve);            // 全投弱点后的该属性总值
-  const allInExpected = allInTotal * WORLD_BOSS_MULT.weakness;
-  return { weak, baseSum, pool, reserve, flatWeak, allInTotal, allInExpected };
+  const allowList = (Array.isArray(allowed) ? allowed : []).filter((k) => STAT_KEYS.indexOf(k) !== -1);
+  if (!allowList.length) return null; // 未勾选任何属性 → 不参与计算
+  const enduranceReserve = Math.max(0, enduranceBase | 0);
+  // 池：resetStats 会清零【全部四属性】的 base，故可支配池 = Σ(四属性 base) + unspent
+  // （未勾选属性不作「全投候选」，但其 base 仍被洗回池中参与分配；耐力扣 enduranceBase 预留）。
+  let baseSum = 0;
+  for (const k of STAT_KEYS) {
+    let b = Math.max(0, base[k] || 0);
+    if (k === 'endurance') b = Math.max(0, b - enduranceReserve);
+    baseSum += b;
+  }
+  const pool = Math.max(0, (snap.unspent | 0) + baseSum);
+  const flat = (k) => Math.max(0, (totals[k] || 0) - (base[k] || 0)); // 装备/遗物/天赋对该属性的固定加成
+  const mult = worldBossStatMultipliers(boss);
+  const weak = boss && boss.weaknessStat ? boss.weaknessStat : null;
+  const candidates = allowList.map((stat) => {
+    const after = flat(stat) + pool;                 // 把池全投到该属性后的洗后总值
+    return {
+      stat,
+      after: Math.round(after),
+      exp: Math.round(after * mult[stat]),
+      isWeak: weak === stat,
+      allowed: true,
+    };
+  });
+  // 最优：伤害最高；平局按 STAT_KEYS 顺序优先（力量>智力>运气>耐力，与用户示例一致）
+  let best = null;
+  for (const c of candidates) {
+    if (!best || c.exp > best.exp) best = c;
+  }
+  // 不洗点的当前池分布（未勾选属性保持 base，勾选属性展示为全投前的 base 值，仅供展示）
+  const poolDist = {};
+  for (const k of STAT_KEYS) poolDist[k] = Math.max(0, base[k] || 0);
+  return { weak, pool, reserve: enduranceReserve, baseSum, candidates, best, poolDist };
 }
 
-// 选最优攻击属性：在 4 个属性里取「属性值 × 倍率」最大者。
+// 选最优攻击属性（不洗点·按当前加点）：在 4 个属性里取「属性值 × 倍率」最大者。
+//   · allowed 为空（未勾选「全洗弱点」）→ 4 属性全参与（沿用原行为）；
+//   · allowed 非空 → 仅在勾选属性中择优（未勾选不参与计算）。
 // 若缺 playerTotals 则退化回「弱点属性」（保持旧行为，不报错）。
-// 返回 { targetStat, expected:{stat:val}, best }
-function computeWorldBossBestStat(boss, playerTotals) {
+// 返回 { targetStat, expected:{stat:val}, best, allowed }
+function computeWorldBossBestStat(boss, playerTotals, allowed) {
   const mults = worldBossStatMultipliers(boss);
-  const keys = ['strength', 'intelligence', 'luck', 'endurance'];
+  const allowList = (Array.isArray(allowed) ? allowed : []).filter((k) => STAT_KEYS.indexOf(k) !== -1);
+  const keys = allowList.length ? allowList : ['strength', 'intelligence', 'luck', 'endurance'];
   const expected = {};
   let targetStat = (boss && boss.weaknessStat) || null; // 退化值：弱点
   let best = -Infinity;
@@ -2928,7 +2959,7 @@ function computeWorldBossBestStat(boss, playerTotals) {
     expected[k] = Math.round(exp);
     if (haveTotals && exp > best) { best = exp; targetStat = k; }
   }
-  return { targetStat, expected, best: best === -Infinity ? null : Math.round(best) };
+  return { targetStat, expected, best: best === -Infinity ? null : Math.round(best), allowed: keys };
 }
 
 // 全洗弱点开关的「属性白名单」判定：仅当弱点是用户勾选的四属性之一才允许触发洗点。
@@ -2947,28 +2978,37 @@ function computeWorldBossPlan(data, playerTotals, snap) {
   if (!s) return { status: null, hasSession: false };
   const b = s.boss || {};
   const p = s.player || {};
-  const bestPlan = computeWorldBossBestStat(b, playerTotals);
-  const targetStat = bestPlan.targetStat; // 伤害最大化目标属性（可能是弱点，也可能不是）
-  // —— 世界Boss「全洗弱点」分支：计算假设 + 相对原逻辑最大期望的胜出判据（严格大于）——
-  // 仅当：开关开启 && boss 有弱点 && 该弱点属于用户勾选的允许属性（worldBossRespecStats，四属性多选）
+  // 用户勾选的四属性白名单：空集合=未勾选「全洗弱点」（不参与洗点计算，纯按当前加点择优）
+  const allowList = (Array.isArray(m.worldBossRespecStats) ? m.worldBossRespecStats : []).filter((k) => STAT_KEYS.indexOf(k) !== -1);
+  const bestPlan = computeWorldBossBestStat(b, playerTotals, allowList);
+  const targetStat = bestPlan.targetStat; // 不洗点·伤害最大化目标属性（可能是弱点，也可能不是）
+  // —— 世界Boss「全洗弱点」分支 ——
+  // 触发条件：开关开启 && 用户勾选了至少一个属性 && boss 有弱点 && 该弱点在用户勾选集合内。
+  // 归因：A 洗点后可支配池全投某属性的伤害表 → 取池全投后的最优属性（best）。
+  //   若该最优就是弱点 → 洗点更优（isWeakWin）；否则仍可按洗点后最优属性报名（用户口径：
+  //   属性越高越好，优先弱点，否则取洗点后伤害最高属性），但仅当该最优属性也在勾选集合内。
   let respec = null;
-  if (m.worldBossRespec && b.weaknessStat && worldBossRespecStatAllowed(b.weaknessStat)) {
-    const allIn = computeWorldBossAllIn(b, snap, m.enduranceBase);
-    if (allIn) {
+  const respecArmed = !!(m.worldBossRespec && allowList.length && b.weaknessStat && worldBossRespecStatAllowed(b.weaknessStat));
+  if (respecArmed) {
+    const allIn = computeWorldBossAllIn(b, snap, m.enduranceBase, allowList);
+    if (allIn && allIn.best) {
       const bestExp = (bestPlan.best != null) ? bestPlan.best : 0;
-      // 全洗后期望 严格大于 当前最优期望 才判定「洗点更优」；相等/小于走原逻辑（保护现有策略）
-      const allInWins = allIn.allInExpected > bestExp + 1e-9;
-      // 报名目标：洗点更优则报弱点（battleAt 再真洗），否则沿用伤害最大化属性
-      const regStat = allInWins ? b.weaknessStat : targetStat;
+      const isWeakWin = allIn.best.isWeak;              // 洗点后伤害最高者恰为弱点
+      const regStat = allIn.best.stat;                  // 洗点后伤害最高属性（candidates 已限定在勾选集合）
       respec = {
         weak: b.weaknessStat,
-        allInExpected: Math.round(allIn.allInExpected),
-        allInTotal: Math.round(allIn.allInTotal),
-        flatWeak: Math.round(allIn.flatWeak),
         pool: allIn.pool,
         reserve: allIn.reserve,
-        bestExpected: Math.round(bestExp),
-        allInWins,
+        baseSum: allIn.baseSum,
+        poolDist: allIn.poolDist,
+        candidates: allIn.candidates,                   // [{stat,after,exp,isWeak}] 洗点后各属性伤害表
+        afterBest: allIn.best,                          // 洗点后最优 {stat,after,exp,isWeak}
+        afterBestExpected: Math.round(allIn.best.exp),
+        afterBestStat: regStat,
+        beforeBestStat: targetStat,
+        bestExpected: Math.round(bestExp),              // 不洗·当前加点最优期望（对比用）
+        isWeakWin,
+        allowedStats: allowList,
         regStat,
       };
     }
@@ -2976,10 +3016,10 @@ function computeWorldBossPlan(data, playerTotals, snap) {
   const selectedStat = p.selectedStat || null;
   const isLocked = p.isLocked === true;
   const inWindow = WORLD_BOSS_ACTIVE_STATUS.indexOf(s.status) !== -1;
-  // 全洗弱点被「属性白名单」拦截：开关开且 boss 有弱点，但该弱点是用户未勾选的属性 → 提示「弱点不在勾选集合」
-  const respecBlocked = !!(m.worldBossRespec && b.weaknessStat && !worldBossRespecStatAllowed(b.weaknessStat));
+  // 全洗弱点被「属性白名单」拦截：开关开 && 已勾选属性 && boss 有弱点，但该弱点是用户未勾选属性 → 提示跳过
+  const respecBlocked = !!(m.worldBossRespec && allowList.length && b.weaknessStat && !worldBossRespecStatAllowed(b.weaknessStat));
   // 可报名/改选条件：处于报名窗口 && 未锁定 && 已选属性不是目标属性
-  // （目标属性：洗点更优时取弱点，否则取伤害最大化属性）
+  // （目标属性：洗点已武装时取「洗点后伤害最高属性」，否则取当前加点伤害最大化属性）
   const regTarget = respec ? respec.regStat : targetStat;
   const shouldChange = !!(inWindow && !isLocked && regTarget && selectedStat !== regTarget);
   const multBP = p.multiplierBasisPoints != null ? p.multiplierBasisPoints : null;
@@ -2994,12 +3034,14 @@ function computeWorldBossPlan(data, playerTotals, snap) {
       multiplierBasisPoints: multBP,
       multiplierPct: multBP != null ? (multBP / 100) : null,
     },
-    targetStat: regTarget,          // 实际报名/改选目标（可能因全洗弱点被覆写为弱点）
-    baseTargetStat: targetStat,     // 原伤害最大化目标（未被洗点分支覆写时相同）
+    targetStat: regTarget,          // 实际报名/改选目标（洗点武装时=洗点后最优，否则=当前加点最优）
+    baseTargetStat: targetStat,     // 不洗点·当前加点最优（未被洗点分支覆写时相同）
     expected: bestPlan.expected,
     best: bestPlan.best,
-    respec: respec,
+    respec: respec,                 // 非空=本场已武装「全洗弱点」，regStat 为洗点后要全投的属性
+    respecArmed: respecArmed,       // 本场是否满足洗点触发条件（开关+勾选+boss弱点在勾选集合）
     respecBlocked: respecBlocked,
+    allowedStats: allowList,        // 用户勾选的四属性白名单（空=未勾选）
     inWindow: inWindow,
     shouldChange: shouldChange,
     battleAt: s.battleAt,
@@ -3104,9 +3146,11 @@ async function checkWorldBoss() {
       const expStr = s.expected
         ? (' 期望: ' + STAT_KEYS.map(k => STAT_LABELS[k] + '=' + s.expected[k]).join('/') + ' → 选' + (s.targetStat ? STAT_LABELS[s.targetStat] : '-'))
         : '';
-      const respecStr = (s.respec && s.respec.allInWins)
-        ? (' 全洗弱点=' + s.respec.allInExpected + '(>最优' + s.respec.bestExpected + ') 报' + STAT_LABELS[s.respec.weak])
-        : (s.respec ? (' 全洗弱点=' + s.respec.allInExpected + '(≤最优' + s.respec.bestExpected + ') 走原逻辑') : '');
+      const respecStr = s.respec
+        ? (' 全洗弱点: 池' + s.respec.pool + ' 全投表[' + s.respec.candidates.map(c => STAT_LABELS[c.stat] + '=' + c.exp).join('/')
+            + '] → ' + STAT_LABELS[s.respec.regStat] + (s.respec.isWeakWin ? '(弱点)' : '(非弱点)')
+            + ' 洗后' + s.respec.afterBestExpected + ' vs 不洗' + s.respec.bestExpected)
+        : (s.respecBlocked ? ' 全洗弱点跳过(弱点不在勾选集合)' : '');
       console.log('[monitor] 世界Boss状态已刷新:',
         s.hasSession ? (s.boss.name + '·' + (s.status || '') + ' 已选:' + (s.player.selectedStat || '未报名') + ' 目标:' + (s.targetStat || '-') + expStr + respecStr) : '无进行中场次');
     } else {
@@ -3193,9 +3237,12 @@ async function autoSelectWorldBoss() {
     return;
   }
   const isWeak = w.boss && w.boss.weaknessStat === w.targetStat;
-  const usingRespec = !!(w.respec && w.respec.allInWins);
+  const usingRespec = !!w.respec; // 洗点已武装：报名目标 = 洗点后伤害最高属性
   console.log('[monitor] 世界Boss自动报名: ' + w.boss.name + ' 弱点=' + (w.boss.weaknessStat ? STAT_LABELS[w.boss.weaknessStat] : '-')
-    + (usingRespec ? '(全洗弱点·更高)' : (isWeak ? '(×200%)' : '(弱点非最优，改选伤害最大属性)')) + '，当前 ' + (w.player.selectedStat || '未报名')
+    + (usingRespec
+        ? '(全洗弱点·洗点后最优=' + STAT_LABELS[w.respec.regStat] + (w.respec.isWeakWin ? '=弱点' : '≠弱点') + ')'
+        : (isWeak ? '(×200%)' : '(弱点非最优，改选伤害最大属性)'))
+    + '，当前 ' + (w.player.selectedStat || '未报名')
     + ' → 报名 ' + w.targetStat + '(' + STAT_LABELS[w.targetStat] + ')。期望: ' + worldBossExpectedStr(w));
   const r = await selectWorldBoss(w.targetStat);
   m.lastWorldBossAuto = {
@@ -3210,9 +3257,11 @@ async function autoSelectWorldBoss() {
   if (r && r.ok) {
     worldBossHandledSig = w.sessionId + '|' + w.targetStat; // 记录本次成功签名，后续去重
     sendWebhook('[Reelax] ⚔️ 世界Boss自动报名: ' + w.boss.name + ' 已选 ' + STAT_LABELS[w.targetStat]
-      + (usingRespec ? '（全洗弱点，battleAt 自动洗点）' : (isWeak ? '（弱点 ×200%）' : '（伤害最大化，非弱点）')));
-    // —— 全洗弱点分支：报名成功即武装本次「到 battleAt 洗点成弱点」——
-    if (usingRespec) armWorldBossRefill(w);
+      + (usingRespec
+        ? '（全洗弱点，battleAt 自动全投 ' + STAT_LABELS[w.respec.regStat] + (w.respec.isWeakWin ? '·弱点' : '·洗点后最优') + '）'
+        : (isWeak ? '（弱点 ×200%）' : '（伤害最大化，非弱点）')));
+    // —— 全洗弱点分支：报名成功即武装本次「到 battleAt 全投 regStat」——
+    if (usingRespec) armWorldBossRefill(w, w.respec.regStat);
   }
   return r;
 }
@@ -3260,11 +3309,14 @@ async function executeWorldBossWash(stat) {
 }
 
 // 报名成功（全洗弱点分支）后武装本场状态机：记录 battleAt / escapeAt，battleAt 到点洗点，结束复原。
-function armWorldBossRefill(w) {
-  if (!w || !w.boss || !w.boss.weaknessStat) return;
+// target：battleAt 要全投的属性（= 洗点后伤害最高属性，通常即 boss 弱点；也支持非弱点最优）。
+function armWorldBossRefill(w, target) {
+  const tgt = target || (w && w.respec && w.respec.regStat) || (w && w.boss && w.boss.weaknessStat);
+  if (!tgt) return;
   m.worldBossRespecState = {
     sessionId: w.sessionId,
-    weak: w.boss.weaknessStat,
+    weak: w.boss ? w.boss.weaknessStat : null, // boss 弱点（仅展示/参考）
+    target: tgt,                               // 实际全投属性（洗点后最优）
     battleAt: w.battleAt ? new Date(w.battleAt).getTime() : 0,
     escapeAt: w.escapeAt ? new Date(w.escapeAt).getTime() : 0,
     washed: false,
@@ -3272,7 +3324,8 @@ function armWorldBossRefill(w) {
     restoring: false,
     restoreSig: null,
   };
-  console.log('[monitor] 世界Boss全洗弱点 已武装: 本场 battleAt=' + (w.battleAt || '-') + ' 将全洗成 ' + STAT_LABELS[m.worldBossRespecState.weak] + '，结束后复原');
+  console.log('[monitor] 世界Boss全洗弱点 已武装: 本场 battleAt=' + (w.battleAt || '-') + ' 将全洗成 '
+    + STAT_LABELS[tgt] + (w.boss && w.boss.weaknessStat === tgt ? '（弱点）' : '（洗点后伤害最优）') + '，结束后复原');
 }
 
 // 每轮自动报名时同步执行一次「洗点/复原」状态推进。
@@ -3290,13 +3343,15 @@ async function autoWorldBossRespecTick(w) {
   if (m.worldBossRespec && m.enabled) {
     const atBattle = (st.battleAt && now >= st.battleAt) || (st.battleAt === 0 && w.inWindow);
     if (!st.washed && !st.washing && atBattle && !w.player.isLocked) {
+      const tgt = st.target || st.weak;
       st.washing = true;
-      const r = await executeWorldBossWash(st.weak);
+      const r = await executeWorldBossWash(tgt);
       st.washing = false;
       st.washed = !!(r && r.ok);
       st.restoreSig = st.sessionId + '|' + (r && r.ok ? 'washed' : 'skip');
-      console.log('[monitor] 世界Boss全洗弱点 洗点' + (st.washed ? '完成' : '失败/跳过') + ': ' + ((r && r.reason) || 'ok') + ' 全投 ' + STAT_LABELS[st.weak]);
-      if (st.washed) sendWebhook('[Reelax] ⚔️ 世界Boss开战，已自动全洗成 ' + STAT_LABELS[st.weak] + '（弱点 ×200%，Boss 结束后自动复原）');
+      console.log('[monitor] 世界Boss全洗弱点 洗点' + (st.washed ? '完成' : '失败/跳过') + ': ' + ((r && r.reason) || 'ok') + ' 全投 ' + STAT_LABELS[tgt]);
+      if (st.washed) sendWebhook('[Reelax] ⚔️ 世界Boss开战，已自动全洗成 ' + STAT_LABELS[tgt]
+        + (st.weak === tgt ? '（弱点 ×200%' : '（洗点后伤害最优') + '，Boss 结束后自动复原）');
     }
   }
 
@@ -3635,7 +3690,7 @@ function recordAutoBoost(record) {
 
 // ---------- 当前状态总览（供 popup「自动开增益」面板展示） ----------
 // 当前地图/天气/赛事/增益概览，30 秒刷新一次，仅用于展示，不做开增益决策。
-const CURRENT_STATUS_BIOME_CN = { b_001:'月落溪谷', b_002:'雾语湿地', b_003:'镜潮海岸', b_004:'雷痕峡湾', b_005:'星根洞窟', b_006:'霞栖湖原', b_007:'云汐悬湖', b_008:'赤砂涌泉', b_009:'极昼冰湾', b_010:'沉钟古港', b_011:'翡翠洪林', b_012:'熔潮环礁', b_013:'天穹鲸海', b_014:'时镜回流', b_015:'星渊圣海' };
+const CURRENT_STATUS_BIOME_CN = { b_001:'月落溪谷', b_002:'雾语湿地', b_003:'镜潮海岸', b_004:'雷痕峡湾', b_005:'星根洞窟', b_006:'霞栖湖原', b_007:'云汐悬湖', b_008:'赤砂涌泉', b_009:'极昼冰湾', b_010:'沉钟古港', b_011:'翡翠洪林', b_012:'熔潮环礁', b_013:'天穹鲸海', b_014:'时镜回流', b_015:'星渊圣海', b_016:'永烬炉海', b_017:'回环岁海' };
 let currentStatusTimer = null;
 let currentStatusInProgress = false;
 

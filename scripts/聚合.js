@@ -53,6 +53,8 @@
     'b_013': '\u5929\u7a79\u9cb8\u6d77',
     'b_014': '\u65f6\u955c\u56de\u6d41',
     'b_015': '\u661f\u6e0a\u5723\u6d77',
+    'b_016': '\u6c38\u70ec\u7089\u6d77',
+    'b_017': '\u56de\u73af\u5c81\u6d77',
   };
 
   // 天气静态定义 (从前端JS提取，xpMultiplier不在API响应中，需通过weatherId查找)
@@ -76,8 +78,9 @@
   };
   // 新优选评分权重（文档校准：金币0.55/经验0.45）
   const W_GOLD_NEW = 0.55, W_EXP_NEW = 0.45;
-  // 地图倍率（金币产出倍率）：线上实测为严格线性 1 + 0.05×序号（b_001=1.00 … b_015=1.70）。
+  // 地图倍率（金币产出倍率）：线上实测为严格线性 1 + 0.05×序号（b_001=1.00 … b_017=1.85）。
   // 直接写死，不依赖 API 快照是否透传 valueMultiplier 字段，保证新旧两条数据路径行为一致。
+  // 注意：倍率只按序号线性递增，与 requiredReincarnationRound（转生门槛）无关——b_016/b_017 沿用序号倍率。
   function getBiomeValueMultiplier(biomeId, biomes) {
     if (Array.isArray(biomes)) {
       const idx = biomes.findIndex(bi => bi.id === biomeId);

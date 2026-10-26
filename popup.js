@@ -899,11 +899,14 @@ function renderWorldBoss() {
     ? mon.worldBossRespecStats.map((s) => WB_CN[s] || s).join('/')
     : '无';
   const rsNote = (mon.worldBossRespec === true)
-    ? ((rs && rs.weak && rs.sessionId === (w && w.sessionId))
-        ? ' · 全洗弱点' + (rs.washed ? '✅已洗' : (rs.restoring ? '⏳复原' : '🚀待开战')) + (WB_CN[rs.weak] || rs.weak)
+    ? ((rs && rs.sessionId === (w && w.sessionId))
+        ? ' · 全洗弱点' + (rs.washed ? '✅已洗' : (rs.restoring ? '⏳复原' : '🚀待开战')) + (WB_CN[rs.target] || rs.target)
         : (w.respecBlocked
             ? ' · 全洗弱点跳过(弱点未勾选;限' + rsAllowed + ')'
-            : ((w && w.respec && w.respec.allInWins) ? ' · 全洗弱点(将报' + (WB_CN[w.respec.weak] || w.respec.weak) + ')' : '')))
+            : ((w && w.respec)
+                ? ' · 全洗弱点(洗后' + (WB_CN[w.respec.regStat] || w.respec.regStat)
+                  + (w.respec.isWeakWin ? '=弱点)' : '≠弱点)')
+                : '')))
     : (w.respecBlocked ? ' · 全洗弱点关' : '');
   setTxt('wb-target', target ? (WB_CN[target] || target) + (isWeak ? ' ×200%(弱点)' : ' ×伤害最大') + rsNote : '—');
 
@@ -939,7 +942,7 @@ function renderWorldBoss() {
 }
 
 // ---------- 自动开增益（读 monitor 的 m.autoBoost） ----------
-const AB_BIOME_CN = { b_001:'月落溪谷', b_002:'雾语湿地', b_003:'镜潮海岸', b_004:'雷痕峡湾', b_005:'星根洞窟', b_006:'霞栖湖原', b_007:'云汐悬湖', b_008:'赤砂涌泉', b_009:'极昼冰湾', b_010:'沉钟古港', b_011:'翡翠洪林', b_012:'熔潮环礁', b_013:'天穹鲸海', b_014:'时镜回流', b_015:'星渊圣海' };
+const AB_BIOME_CN = { b_001:'月落溪谷', b_002:'雾语湿地', b_003:'镜潮海岸', b_004:'雷痕峡湾', b_005:'星根洞窟', b_006:'霞栖湖原', b_007:'云汐悬湖', b_008:'赤砂涌泉', b_009:'极昼冰湾', b_010:'沉钟古港', b_011:'翡翠洪林', b_012:'熔潮环礁', b_013:'天穹鲸海', b_014:'时镜回流', b_015:'星渊圣海', b_016:'永烬炉海', b_017:'回环岁海' };
 const AB_REASON_CN = { '优选-赛事':'优选·赛事', '优选-最优图':'优选·最优图', '优选图':'优选图' };
 const AB_FAIL_CN = {
   'already-active':'已有增益未过期，未新开',

@@ -4,6 +4,25 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.14.0] - 2026-10-26
+
+### 新增：一键市场挂单页签按地图筛选
+- `scripts/一键市场.js`：挂单页签新增「地图（仅挂所选地图的鱼）」下拉（`r1cm-biome`），默认「全部地图」；选中后仅对 `parseFishId().biomeId` 匹配的鱼挂单，选择随 `localStorage` 持久化（`biome` 字段），并在运行日志中标注本次筛选用到的地图。
+
+### 优化：世界Boss「全洗弱点」改为按洗点后各属性实际伤害择优
+- `monitor.js`：`computeWorldBossAllIn` 口径升级——不再是"全投弱点 vs 当前最优"的二元判定，而是把洗点后可支配池（`unspent + Σbase`，扣除耐力预留）**分别全投到每个勾选属性**，算出各自洗后总属性×倍率（弱点×2.0 / 普通×1.0 / 防御×0.5）的实际伤害，取伤害最高者作为报名与开战全投目标（`regStat`）。平局按 力量>智力>运气>耐力 顺序。
+- 因此洗点后最优**可能不是弱点**（`isWeakWin=false` 时仍按洗后最优属性报名/洗点），仅当该最优属在用户勾选白名单内才武装；未勾选任何属性时不参与洗点计算（`respecBlocked` 判定同步收紧为需已勾选属性）。
+- `armWorldBossRefill(w, target)` / `autoWorldBossRespecTick` 改为全投 `regStat`（新增 `target` 字段，`weak` 仅作展示参考）；日志与 webhook 文案改为展示"洗点后最优属性 + 洗后/不洗伤害对比 + 各属性全投伤害表"。
+- `options.html` / `popup.js`：说明与面板文案同步（"先算各属性全投实际伤害，取最高属性报名"；显示 `洗后X=弱点/≠弱点`）。
+
+### 新增：支持 b_016 永烬炉海 / b_017 回环岁海 两张新地图
+- `scripts/聚合.js`：BIOME 名称表补 `b_016`/`b_017`；地图倍率注释更新为 `1+0.05×序号`（b_017=1.85），明确倍率只与序号线性相关、与转生门槛无关。
+- `popup.js` / `monitor.js`：`AB_BIOME_CN`、`CURRENT_STATUS_BIOME_CN` 补两张地图中文名。
+- `scripts/一键市场.js` / `scripts/以物易物价格.js`：`HARD_FISH` 各补 132 条（b_016/b_017 各 66 种），两份表校验完全一致（共 1122 条）。
+
+### 其它
+- 去除本轮被编辑器写入的 UTF-8 BOM（`monitor.js`、`popup.js`、`scripts/聚合.js`、`scripts/一键市场.js`、`scripts/以物易物价格.js`），保持仓库统一无 BOM。
+
 ## [v1.13.1] - 2026-10-23
 
 ### 修复：buff 天气判定在 fishing/state 403 时整体失效（含勾选的奥秘涌流也不买）

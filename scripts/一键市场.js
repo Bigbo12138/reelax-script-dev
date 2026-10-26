@@ -83,13 +83,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
           adj: (Number(o.adj) || Number(o.adj) === 0 ? Number(o.adj) : null),
           minPrice: (Number(o.minPrice) >= 0 ? Number(o.minPrice) : null),
           minPriceLimit: o.minPriceLimit === true,
+          biome: (typeof o.biome === 'string' ? o.biome : ''),
         };
       }
     } catch (_e) {}
     return {};
   }
   function saveCfg(c) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ rarities: c.rars, minQty: c.minQty, adj: c.adj, minPrice: c.minPrice, minPriceLimit: c.minPriceLimit })); } catch (_e) {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ rarities: c.rars, minQty: c.minQty, adj: c.adj, minPrice: c.minPrice, minPriceLimit: c.minPriceLimit, biome: c.biome || '' })); } catch (_e) {}
   }
   // 每次打开面板时从 localStorage 读取最新值，避免读到旧快照
   function savedCfg() { return loadCfg(); }
@@ -282,6 +283,13 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     // 挂单页签内容（面板尚未 append 到 document，必须用 panel 作用域查找）
     const sellView = panel.querySelector('#r1cm-tab-sell');
     sellView.innerHTML = `
+      <div style="font-size:13px;margin-bottom:4px;">地图（仅挂所选地图的鱼）</div>
+      <div style="margin-bottom:10px;">
+        <select id="r1cm-biome" title="筛选地图（仅对所选地图的鱼挂单）"
+          style="width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;cursor:pointer;">
+          <option value="">全部地图</option>
+        </select>
+      </div>
       <div style="font-size:13px;margin-bottom:4px;">品级（勾选的才会挂单）</div>
       <div style="display:flex;flex-wrap:wrap;margin-bottom:10px;">${rarChips}</div>
       <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-start;">
@@ -336,6 +344,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     el('r1cm-minqty').addEventListener('input', autoSave);
     el('r1cm-adj').addEventListener('input', autoSave);
     el('r1cm-minprice').addEventListener('input', autoSave);
+    if (el('r1cm-biome')) el('r1cm-biome').addEventListener('change', autoSave);
     // 勾选「单鱼挂牌价 不限制」→ 挂牌价下限输入框置灰（视为0=不限制），取消则恢复可输入
     (function () {
       const limitCb = el('r1cm-minprice-limit');
@@ -453,6 +462,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     restoreBargainCfg();
     // 填充捡漏地图下拉（异步加载地图列表；完成后再应用持久化选择）
     populateBiomeSelect();
+    // 填充挂单地图下拉（同上，独立持久化）
+    populateSellBiomeSelect();
     // 「专精鱼用当前最大值」勾选态恢复后同步数量框置灰
     (function () {
       const qtyEl = el('rlb-bid-qty');
@@ -490,7 +501,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     // 勾选「单鱼挂牌价 不限制」时挂牌价下限强制为 0（不限）
     const minPriceLimit = el('r1cm-minprice-limit') ? el('r1cm-minprice-limit').checked : false;
     const minPrice = minPriceLimit ? 0 : (Math.max(0, Number(el('r1cm-minprice').value) || 0));
-    return { rars, minQty, adj, minPrice, minPriceLimit };
+    const biome = el('r1cm-biome') ? el('r1cm-biome').value : '';
+    return { rars, minQty, adj, minPrice, minPriceLimit, biome };
   }
 
   async function onRun() {
@@ -552,14 +564,17 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     }
     log(`市场活动挂单上限 ${maxOrders}，服务端当前 ${serverActive} 单（本地统计 ${[...listed.values()].reduce((n, a) => n + a.length, 0)} 单）`);
 
-    // 筛选：品级 + 数量下限 + 未锁定（已有挂单的鱼也会进入，待下架后重组合并）
+    // 筛选：品级 + 数量下限 + 未锁定 + 地图（已有挂单的鱼也会进入，待下架后重组合并）
+    const wantBiome = c.biome || '';
     const candidates = fish.filter((f) =>
       c.rars.includes(f.rarity)
       && (f.quantity || 0) >= c.minQty
       && !f.isLocked && !f.isManuallyLocked && !f.isMasteryLocked
+      && (!wantBiome || parseFishId(f.fishId).biomeId === wantBiome)
     );
     const duplicateCount = fish.reduce((n, f) => n + (listed.has(f.fishId) ? 1 : 0), 0);
-    log(`筛选：共 ${fish.length} 种，符合 ${candidates.length} 种（品级 ${c.rars.map((r)=>RARITY_CN[r]||r).join('/')}，数量≥${c.minQty}，其中有既有挂单将先下架再合并 ${duplicateCount} 种）`);
+    const biomeLabel = wantBiome ? biomeIdToTag(wantBiome) : '全部地图';
+    log(`筛选：共 ${fish.length} 种，符合 ${candidates.length} 种（品级 ${c.rars.map((r)=>RARITY_CN[r]||r).join('/')}，地图 ${biomeLabel}，数量≥${c.minQty}，其中有既有挂单将先下架再合并 ${duplicateCount} 种）`);
 
     if (!candidates.length) { log('信息: 没有符合条件可处理的鱼'); return; }
 
@@ -1605,6 +1620,21 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (saved && saved.biome && [...sel.options].some((o) => o.value === saved.biome)) sel.value = saved.biome;
   }
 
+  // 挂单页签：填充地图筛选下拉（''=全部地图），并恢复持久化选择
+  async function populateSellBiomeSelect() {
+    const sel = el('r1cm-biome');
+    if (!sel) return;
+    try {
+      const list = await ensureBiomeList();
+      if (list.length) {
+        sel.innerHTML = '<option value="">全部地图</option>' +
+          list.map((b) => `<option value="${escapeHtml(b.biomeId)}">${b.mapTag || escapeHtml(b.biomeId)}</option>`).join('');
+      }
+    } catch (_e) {}
+    const saved = savedCfg();
+    if (saved && saved.biome && [...sel.options].some((o) => o.value === saved.biome)) sel.value = saved.biome;
+  }
+
   // fishId b_007_exotic_01 → 地图号 b_007 → [B7]；稀有度 = 第 3 段
   function parseFishId(fishId) {
     const p = String(fishId || '').split('_');
@@ -2607,6 +2637,138 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     ['b_015_uncommon_08', '星刺河鲀'],
     ['b_015_uncommon_09', '圣甲小鲟'],
     ['b_015_uncommon_10', '圣环星螺'],
+    ['b_016_common_01', '灰烬米鳉'],
+    ['b_016_common_02', '炭溪泥鳅'],
+    ['b_016_common_03', '赤炉麦穗鱼'],
+    ['b_016_common_04', '暖石小鲫'],
+    ['b_016_common_05', '烟纹鳑鲏'],
+    ['b_016_common_06', '焦苔虾虎'],
+    ['b_016_common_07', '铜屑银鱼'],
+    ['b_016_common_08', '炉口短鳚'],
+    ['b_016_common_09', '橙鳃小鲈'],
+    ['b_016_common_10', '烬点溪鳟'],
+    ['b_016_common_11', '黑砂针鱼'],
+    ['b_016_common_12', '热涡灯鱼'],
+    ['b_016_uncommon_01', '铜炉锦鲤'],
+    ['b_016_uncommon_02', '烟环鳗'],
+    ['b_016_uncommon_03', '赤脊岩鲃'],
+    ['b_016_uncommon_04', '余火虹鳟'],
+    ['b_016_uncommon_05', '炉铃石首鱼'],
+    ['b_016_uncommon_06', '铸纹长颌鱼'],
+    ['b_016_uncommon_07', '煤晶鲶'],
+    ['b_016_uncommon_08', '熔边月鱼'],
+    ['b_016_uncommon_09', '铜羽飞鱼'],
+    ['b_016_uncommon_10', '烬花鳅'],
+    ['b_016_fine_01', '炉心龙鱼'],
+    ['b_016_fine_02', '锻潮骨舌鱼'],
+    ['b_016_fine_03', '赤铜盾鲟'],
+    ['b_016_fine_04', '墨炉燕鳐'],
+    ['b_016_fine_05', '烟纱鳍鲑'],
+    ['b_016_fine_06', '岩浆盲鳗'],
+    ['b_016_fine_07', '余烬冠鲈'],
+    ['b_016_fine_08', '火孔花鳉'],
+    ['b_016_rare_01', '百炼环鳗'],
+    ['b_016_rare_02', '焰井镜鲤'],
+    ['b_016_rare_03', '炉风剑鱼'],
+    ['b_016_rare_04', '炭晶甲鲟'],
+    ['b_016_rare_05', '铸虹宽鳍鱼'],
+    ['b_016_rare_06', '熔金须鲶'],
+    ['b_016_rare_07', '烬河六眼鳟'],
+    ['b_016_rare_08', '锤火长尾鲈'],
+    ['b_016_epic_01', '千锻潮龙鱼'],
+    ['b_016_epic_02', '沉炉重甲鲟'],
+    ['b_016_epic_03', '赤烟斗篷鳐'],
+    ['b_016_epic_04', '余火灯冠鱼'],
+    ['b_016_epic_05', '炉月镜鳗'],
+    ['b_016_epic_06', '炭海织鳍鲑'],
+    ['b_016_epic_07', '焰纹断潮鱼'],
+    ['b_016_epic_08', '锻星骨鲈'],
+    ['b_016_legendary_01', '永燃炉王鱼'],
+    ['b_016_legendary_02', '百川铸灵鳗'],
+    ['b_016_legendary_03', '烬海守门鲟'],
+    ['b_016_legendary_04', '铜日冠鳐'],
+    ['b_016_legendary_05', '万锤鸣潮鲑'],
+    ['b_016_mythic_01', '无熄烬源鱼'],
+    ['b_016_mythic_02', '熔界裂鳍鲟'],
+    ['b_016_mythic_03', '千炉同心鳗'],
+    ['b_016_mythic_04', '铸梦流光鳐'],
+    ['b_016_mythic_05', '焰息归潮鲤'],
+    ['b_016_exotic_01', '逆熔游鳗'],
+    ['b_016_exotic_02', '余烬折光鱼'],
+    ['b_016_exotic_03', '空炉听潮鲈'],
+    ['b_016_exotic_04', '无烟焰冠姬'],
+    ['b_016_exotic_05', '铸时环鲟'],
+    ['b_016_arcane_01', '炉海初火姬'],
+    ['b_016_arcane_02', '万烬归一鳗'],
+    ['b_016_arcane_03', '不落熔阳鳐'],
+    ['b_016_arcane_04', '始铸无相鲟'],
+    ['b_016_arcane_05', '轮回炉心鲤'],
+    ['b_017_common_01', '晷沙小鳉'],
+    ['b_017_common_02', '回刻泥鳅'],
+    ['b_017_common_03', '晨隙麦穗鱼'],
+    ['b_017_common_04', '旧潮小鲫'],
+    ['b_017_common_05', '秒针银鱼'],
+    ['b_017_common_06', '环刻鳑鲏'],
+    ['b_017_common_07', '时苔虾虎'],
+    ['b_017_common_08', '迟光短鳚'],
+    ['b_017_common_09', '暮隙小鲈'],
+    ['b_017_common_10', '砂漏针鱼'],
+    ['b_017_common_11', '回音溪鳟'],
+    ['b_017_common_12', '曙纹灯鱼'],
+    ['b_017_uncommon_01', '晷面镜鲤'],
+    ['b_017_uncommon_02', '双刻长鳗'],
+    ['b_017_uncommon_03', '昨日虹鳟'],
+    ['b_017_uncommon_04', '迟潮石首鱼'],
+    ['b_017_uncommon_05', '金砂骨舌鱼'],
+    ['b_017_uncommon_06', '环光月鱼'],
+    ['b_017_uncommon_07', '归秒鲶'],
+    ['b_017_uncommon_08', '钟苔岩鲃'],
+    ['b_017_uncommon_09', '暮钟飞鱼'],
+    ['b_017_uncommon_10', '晨砂花鳅'],
+    ['b_017_fine_01', '环时龙鱼'],
+    ['b_017_fine_02', '旧世盾鲟'],
+    ['b_017_fine_03', '倒影燕鳐'],
+    ['b_017_fine_04', '钟摆长鳗'],
+    ['b_017_fine_05', '晨暮双鳍鲑'],
+    ['b_017_fine_06', '砂海冠鲈'],
+    ['b_017_fine_07', '刻轮鳞鱼'],
+    ['b_017_fine_08', '回潮透明鳟'],
+    ['b_017_rare_01', '十二晷环鳗'],
+    ['b_017_rare_02', '百年镜鲤'],
+    ['b_017_rare_03', '断刻剑鱼'],
+    ['b_017_rare_04', '钟脊甲鲟'],
+    ['b_017_rare_05', '逆砂宽鳍鱼'],
+    ['b_017_rare_06', '流年须鲶'],
+    ['b_017_rare_07', '瞬影六眼鲈'],
+    ['b_017_rare_08', '晷月长尾鲑'],
+    ['b_017_epic_01', '千刻织鳍鱼'],
+    ['b_017_epic_02', '遗时重甲鲟'],
+    ['b_017_epic_03', '未来镜翼鳐'],
+    ['b_017_epic_04', '时隙灯冠鲈'],
+    ['b_017_epic_05', '晨昏回环鳗'],
+    ['b_017_epic_06', '晷盘断浪鲑'],
+    ['b_017_epic_07', '古钟银骨鱼'],
+    ['b_017_epic_08', '长昼暮尾鲤'],
+    ['b_017_legendary_01', '万年晷王鱼'],
+    ['b_017_legendary_02', '无终回声鳗'],
+    ['b_017_legendary_03', '岁海守刻鲟'],
+    ['b_017_legendary_04', '双日镜冠鳐'],
+    ['b_017_legendary_05', '千潮归程鲑'],
+    ['b_017_mythic_01', '未至晨光鱼'],
+    ['b_017_mythic_02', '永昼裂鳍鲟'],
+    ['b_017_mythic_03', '前尘同游鳗'],
+    ['b_017_mythic_04', '织岁流光鳐'],
+    ['b_017_mythic_05', '终刻归潮鲤'],
+    ['b_017_exotic_01', '逆岁游鳗'],
+    ['b_017_exotic_02', '无刻折光鱼'],
+    ['b_017_exotic_03', '空晷听潮姬'],
+    ['b_017_exotic_04', '重晨双翼鳐'],
+    ['b_017_exotic_05', '借秒环鲟'],
+    ['b_017_arcane_01', '岁海初刻鱼'],
+    ['b_017_arcane_02', '万时归一鳗'],
+    ['b_017_arcane_03', '不逝晨阳鳐'],
+    ['b_017_arcane_04', '始终无相鲟'],
+    ['b_017_arcane_05', '轮回晷心姬'],
   ];
   let _allFish = null; // [{fishId,name,biomeId,rarity,mapTag}]
   let _allTs = 0;

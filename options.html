@@ -332,11 +332,10 @@
     <span class="hint">弱点×200% / 普通×100% / 防御×50%。未报名或已选非最优且未锁定（第一次攻击前）才自动改选；已锁定不动。</span>
     <label style="display:block;margin-top:8px;">
       <input type="checkbox" id="worldBossRespec" />
-      世界Boss全洗弱点（若「重置+全投弱点」期望伤害 严格大于 当前最优，则报名弱点并在开战(battleAt)时真实洗点到弱点，Boss 结束后复原为原方案）
+      世界Boss全洗弱点（先算「洗点后可支配点全投各属性」的实际伤害，取伤害最高属性报名；开战(battleAt)时真实洗点全投该属性，Boss 结束后复原为原方案）
     </label>
-    <span class="hint">激进、会真实重骰属性并对原方案临时复原；与比赛洗点互斥接管（比赛进行中让位）。默认关。</span>
     <div style="margin-top:8px;font-size:12px;color:#888;" data-wbrespec-row>
-      仅当 Boss 弱点属于下列勾选属性时触发（全不勾=永不触发）：
+      仅勾选属性参与洗点：
       <span>
         <label style="display:inline-flex;align-items:center;gap:3px;margin-right:10px;"><input type="checkbox" data-wbrespec-strength /> 力量</label>
         <label style="display:inline-flex;align-items:center;gap:3px;margin-right:10px;"><input type="checkbox" data-wbrespec-intelligence /> 智力</label>
