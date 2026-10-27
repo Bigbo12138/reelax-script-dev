@@ -2952,7 +2952,7 @@ function computeWorldBossBestStat(boss, playerTotals, allowed) {
   const expected = {};
   let targetStat = (boss && boss.weaknessStat) || null; // 退化值：弱点
   let best = -Infinity;
-  const haveTotals = !!(playerTotals && Object.keys(playerTotals).length);
+  const haveTotals = !!(playerTotals && Object.values(playerTotals).some((v) => Number(v) > 0));
   for (const k of keys) {
     const val = haveTotals ? Number(playerTotals[k] || 0) : 0;
     const exp = val * mults[k];
@@ -3067,6 +3067,9 @@ function worldBossPlayerTotals() {
     const t = m.sync.stats.total;
     totals = { strength: t.strength || 0, intelligence: t.intelligence || 0, luck: t.luck || 0, endurance: t.endurance || 0 };
   }
+  // m.sync 通常不含 player.stats（来自 fishing/sync），切勿把「全 0」当作有效总值，
+  // 否则 computeWorldBossBestStat 会因 0>−∞ 误选第一个属性（力量）。全 0 / 无数据都返回 null。
+  if (totals && !Object.values(totals).some((v) => v > 0)) totals = null;
   if (totals) worldBossPlayerTotalsCache = { totals, at: now };
   return totals;
 }
@@ -3104,6 +3107,9 @@ function worldBossPlayerSnapshot() {
     base: statsMetaToFieldMap(stats ? stats.base : null),
     unspent: (m.sync && m.sync.unspentStatPoints != null) ? (m.sync.unspentStatPoints | 0) : 0,
   };
+  // m.sync 一般不含 player.stats → 全 0 快照无意义，缓存它会让 checkWorldBoss 永远走「已有值」分支，
+  // 从不回查 /api/player/stats，导致误选第一个属性。全 0 不缓存、并由调用方判定为「需回查」。
+  if (!Object.values(snap.totals).some((v) => v > 0)) return null;
   worldBossPlayerSnapshotCache = { snap, at: now };
   return snap;
 }
@@ -3119,7 +3125,7 @@ async function refreshWorldBossPlayerSnapshot() {
       };
       worldBossPlayerSnapshotCache = { snap, at: Date.now() };
       worldBossPlayerTotalsCache = { totals: snap.totals, at: Date.now() };
-      if (p.unspentStatPoints !== undefined) m.sync.unspentStatPoints = p.unspentStatPoints;
+      if (p.unspentStatPoints !== undefined && m.sync) m.sync.unspentStatPoints = p.unspentStatPoints;
       return snap;
     }
   } catch (e) { /* 忽略，回退到缓存 */ }
@@ -3133,13 +3139,13 @@ async function checkWorldBoss() {
   try {
     const res = await ReelaxApi.worldBossOverview();
     if (res && res.ok && res.data) {
-      // 取我方属性快照（total + base + unspent）用于选角与「全洗弱点」决策（优先同步缓存，必要时回查）
+      // 取我方属性快照（total + base + unspent）用于选角与「全洗弱点」决策。
+      // 优先同步缓存；若为 null（m.sync 无 stats）或 base 为空，回查 /api/player/stats。
       let snap = worldBossPlayerSnapshot();
-      let totals = snap.totals;
-      if (!totals || Object.keys(snap.base).length === 0) {
+      if (!snap || !Object.values(snap.base).some((v) => v > 0)) {
         snap = await refreshWorldBossPlayerSnapshot();
-        totals = snap.totals;
       }
+      const totals = (snap && snap.totals) || null;
       m.worldBoss = computeWorldBossPlan(res.data, totals, snap);
       m.lastWorldBossError = null;
       const s = m.worldBoss;

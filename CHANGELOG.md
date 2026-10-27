@@ -4,6 +4,13 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.14.4] - 2026-10-26
+
+### 修复：世界Boss 属性全为 0 时误选「力量」为首选属性
+- `monitor.js`：`m.sync` 通常不含 `player.stats`（来自 fishing/sync），导致属性快照全为 0；此前把「全 0」视为有效总值，`computeWorldBossBestStat` 因 `0 > -Infinity` 恒选第一个属性（力量），且该 0 快照被写入缓存后 `checkWorldBoss` 永远走「已有值」分支、从不回查 `/api/player/stats`。
+- 修复：`worldBossPlayerSnapshot` 全 0 时返回 `null` 且不缓存；`worldBossPlayerTotals` 全 0 时置 `null`；`computeWorldBossBestStat` 的 `haveTotals` 改为要求至少一个属性 > 0；`checkWorldBoss` 改为 `snap` 为空或 base 全 0 时回查 `/api/player/stats`，并以回查结果为准。
+- 另：`refreshWorldBossPlayerSnapshot` 写 `m.sync.unspentStatPoints` 前判空 `m.sync`，避免 null 异常。
+
 ## [v1.14.3] - 2026-10-26
 
 ### 优化：勾选框与文字对齐
