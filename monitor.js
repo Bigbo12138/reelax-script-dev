@@ -706,16 +706,28 @@ async function autoAllocate(unspent) {
     // 主属性总计阈值：主属性达阈值后，剩余点分给副属性（target 与 secondary 相同则全加主属性）
     const usePrimaryThreshold = !!(m.primaryTotalTarget > 0) && secondary && secondary !== target;
     if (usePrimaryThreshold) {
-      let curTotal = 0;
+      // 读当前「总属性」必须成功且为有效数字；读失败绝不能当作 curTotal=0
+      // （否则 needToReach=目标值，会把整批新点误加到主属性上，即使实际早已达标）。
+      let curTotal = null;
       try {
         const st = await ReelaxApi.playerStats();
         if (st && st.ok && st.player && st.player.stats && st.player.stats.total) {
-          curTotal = Number(st.player.stats.total[target]) || 0;
+          const raw = st.player.stats.total[target];
+          const num = Number(raw);
+          if (raw !== undefined && raw !== null && Number.isFinite(num)) curTotal = num;
         }
-      } catch (_e) { /* 读取当前属性失败则全加主属性，保守不误分 */ }
-      const needToReach = m.primaryTotalTarget - curTotal;
-      const toPrimary = Math.max(0, Math.min(needToReach, unspent));
-      const toSecondary = unspent - toPrimary;
+      } catch (_e) { /* 读取失败：curTotal 保持 null，下方按「未知」保守处理 */ }
+      let toPrimary, toSecondary;
+      if (curTotal === null) {
+        // 无法确认主属性是否达标 → 保守全加副属性，避免误加主属性（可等下次巡检重试）
+        toPrimary = 0;
+        toSecondary = unspent;
+        console.warn('[monitor] 自动加点: 读取当前总属性失败，本次全部加副属性 ' + secondary + '（避免误加主属性 ' + target + '）');
+      } else {
+        const needToReach = m.primaryTotalTarget - curTotal;
+        toPrimary = Math.max(0, Math.min(needToReach, unspent));
+        toSecondary = unspent - toPrimary;
+      }
       body[target] = toPrimary;
       if (toSecondary > 0) {
         body[secondary] = toSecondary;
