@@ -3859,10 +3859,12 @@ async function _monitorFetchJSON(path) {
 }
 
 // 计算「纯天气倍率最大 · 船可达最远」的目标图（经验优选开增益校验用）。
-// 船可达 = 木桶口径：全船最低等级 ≥ requiredLevel 且最低转生 ≥ requiredReincarnationRound
-//         （从 /api/party-boats/overview 的 crew.members[].identity 的 level / reincarnationRound 推导）；
-//         无船/无船员数据或两者未知时退化为全部已解锁图（与聚合贪婪模式一致）。
-// 例：B16 永烬炉海要求转生1且5000级 → 须全船5000级且全员转生1才可达。
+// 船可达（木桶口径，从 /api/party-boats/overview 的 crew.members[].identity 推导全船最低转生/等级）：
+//   1) 全船最低转生 < 图的 requiredReincarnationRound → 不可达。
+//   2) 全船最低转生 > 图的转生要求 → 无视等级要求（如 1转可去所有0转图，不论等级）。
+//   3) 全船最低转生 = 图的转生要求 → 仍需全船最低等级 ≥ requiredLevel
+//      （如 B16 要求转生1+5000级：全员1转时还要全船达 Lv5000）。
+//   4) 无船/无船员数据时退化为全部已解锁图（与聚合贪婪模式一致）。
 // 相同纯天气倍率取 requiredLevel 最大者（船可达最远）；天气未知按 1.00 参与排序但不高于有明确天气的图。
 // 返回 { biomeId, biomeName, xp, rl, weatherId } 或 null（取不到 /api/biomes 时）。
 async function findBoostWeatherOptimalBiome() {
@@ -3895,9 +3897,15 @@ async function findBoostWeatherOptimalBiome() {
   for (const b of biomes) {
     if (!b || b.isUnlocked !== true) continue;
     const rl = typeof b.requiredLevel === 'number' ? b.requiredLevel : 0;
-    if (typeof crewLowestLevel === 'number' && rl > crewLowestLevel) continue;
     const rReq = typeof b.requiredReincarnationRound === 'number' ? b.requiredReincarnationRound : 0;
-    if (typeof crewLowestReinc === 'number' && rReq > crewLowestReinc) continue;
+    if (typeof crewLowestReinc === 'number') {
+      // 转生不足 → 不可达；转生严格大于要求 → 无视等级；转生恰好等于要求 → 仍需比对等级
+      if (crewLowestReinc < rReq) continue;
+      if (crewLowestReinc === rReq && typeof crewLowestLevel === 'number' && rl > crewLowestLevel) continue;
+    } else if (typeof crewLowestLevel === 'number' && rl > crewLowestLevel) {
+      // 转生未知时退回纯等级木桶
+      continue;
+    }
     const xp = _weatherXp(b.weather);
     if (!best || xp > best.xp || (xp === best.xp && rl > best.rl)) {
       best = { biomeId: b.id, biomeName: b.name || b.id, xp, rl, weatherId: (b.weather && (b.weather.id || b.weather.weatherId)) || null };
