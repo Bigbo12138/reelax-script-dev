@@ -2568,11 +2568,15 @@ function isRoundContributable(rnd, now) {
 // data: 接口响应 data 字段。opts: {}（保留签名以兼容调用；无更多覆盖参数）。
 // 返回 { status, day, rounds, currentRound, perResource, updatedAt }
 function computeSacrificePlan(data, opts) {
-  // 每个资源的参与门槛百分比（用户设置，各资源独立；默认 0.5%）
+  // 每个资源的参与门槛百分比（用户设置，各资源独立；默认 0.5%）。
+  // 明确的 0 = 完全不参与该资源（返回 null 表示关闭）；未设置/NaN 才回退默认 0.5%。
   const pctOf = function (type) {
     const key = 'sacrifice' + type.charAt(0).toUpperCase() + type.slice(1) + 'Pct'; // relic→sacrificeRelicPct
-    const v = Number(m[key]);
-    return (v > 0) ? v : 0.5;
+    const raw = m[key];
+    if (raw === undefined || raw === null || raw === '') return 0.5;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return 0.5;
+    return (v > 0) ? v : null; // 0 或负数 → null（不参与）
   };
   const day = data && data.day ? { date: data.day.date, startsAt: data.day.startsAt, endsAt: data.day.endsAt } : null;
   const rounds = (data && Array.isArray(data.rounds)) ? data.rounds.map(function (r) { return {
@@ -2632,6 +2636,16 @@ function computeSacrificePlan(data, opts) {
     }
 
     const thresholdPct = pctOf(type);
+    if (thresholdPct == null) {
+      // 用户把该资源门槛设为 0 → 完全不参与，不自动捐献
+      plan.threshold = 0;
+      plan.reference = 0;
+      plan.need = 0;
+      plan.canContribute = false;
+      plan.reason = '已关闭(门槛0)';
+      perResource[type] = plan;
+      continue;
+    }
     const threshold = Math.ceil(target * (thresholdPct / 100)); // 参与门槛（单位同 target：分/数量）
     const reference = threshold + 1;                          // 参考值 = 门槛 + 多 1 保险
     // 目标/还差参考量：遗物、金币这类按「数值精确」的资源 → 就捐恰好门槛(threshold)；
