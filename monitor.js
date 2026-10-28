@@ -3859,8 +3859,10 @@ async function _monitorFetchJSON(path) {
 }
 
 // 计算「纯天气倍率最大 · 船可达最远」的目标图（经验优选开增益校验用）。
-// 船可达 = requiredLevel ≤ crewLowestLevel（木桶上限，从 /api/party-boats/overview 的 crew.members 最低等级推导）；
-//         无船/无船员数据或 crewLowestLevel 未知时退化为全部已解锁图（与聚合贪婪模式一致）。
+// 船可达 = 木桶口径：全船最低等级 ≥ requiredLevel 且最低转生 ≥ requiredReincarnationRound
+//         （从 /api/party-boats/overview 的 crew.members[].identity 的 level / reincarnationRound 推导）；
+//         无船/无船员数据或两者未知时退化为全部已解锁图（与聚合贪婪模式一致）。
+// 例：B16 永烬炉海要求转生1且5000级 → 须全船5000级且全员转生1才可达。
 // 相同纯天气倍率取 requiredLevel 最大者（船可达最远）；天气未知按 1.00 参与排序但不高于有明确天气的图。
 // 返回 { biomeId, biomeName, xp, rl, weatherId } 或 null（取不到 /api/biomes 时）。
 async function findBoostWeatherOptimalBiome() {
@@ -3869,17 +3871,23 @@ async function findBoostWeatherOptimalBiome() {
   if (!biomes || !biomes.length) return null;
 
   let crewLowestLevel = null;
+  let crewLowestReinc = null;
   try {
     const pb = await _monitorFetchJSON('/api/party-boats/overview');
     const body = pb || null;
     const crew = body && (body.crew || (body.party && body.party.crew));
     if (crew && Array.isArray(crew.members) && crew.members.length) {
       let lowest = Infinity;
+      let lowestReinc = Infinity;
       for (const m of crew.members) {
-        const lv = m && m.identity && typeof m.identity.level === 'number' ? m.identity.level : NaN;
+        const idn = m && m.identity;
+        const lv = idn && typeof idn.level === 'number' ? idn.level : NaN;
         if (Number.isFinite(lv) && lv < lowest) lowest = lv;
+        const rr = idn && typeof idn.reincarnationRound === 'number' ? idn.reincarnationRound : NaN;
+        if (Number.isFinite(rr) && rr < lowestReinc) lowestReinc = rr;
       }
       crewLowestLevel = Number.isFinite(lowest) ? lowest : null;
+      crewLowestReinc = Number.isFinite(lowestReinc) ? lowestReinc : null;
     }
   } catch (_e) { /* 船数据取不到则不做木桶过滤 */ }
 
@@ -3888,6 +3896,8 @@ async function findBoostWeatherOptimalBiome() {
     if (!b || b.isUnlocked !== true) continue;
     const rl = typeof b.requiredLevel === 'number' ? b.requiredLevel : 0;
     if (typeof crewLowestLevel === 'number' && rl > crewLowestLevel) continue;
+    const rReq = typeof b.requiredReincarnationRound === 'number' ? b.requiredReincarnationRound : 0;
+    if (typeof crewLowestReinc === 'number' && rReq > crewLowestReinc) continue;
     const xp = _weatherXp(b.weather);
     if (!best || xp > best.xp || (xp === best.xp && rl > best.rl)) {
       best = { biomeId: b.id, biomeName: b.name || b.id, xp, rl, weatherId: (b.weather && (b.weather.id || b.weather.weatherId)) || null };

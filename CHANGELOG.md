@@ -4,6 +4,12 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.14.5] - 2026-10-27
+
+### 优化：经验增益选图增加转生等级木桶约束
+- `monitor.js`：`findBoostWeatherOptimalBiome` 判断「船可达」时，除全船最低等级 ≥ 地图 `requiredLevel` 外，新增全船最低转生轮次 ≥ `requiredReincarnationRound`（从 `/api/party-boats/overview` 的 `crew.members[].identity.reincarnationRound` 推导，未知则不加该约束）。
+- 避免选中等级够但转生不足的地图（如 b_016 永烬炉海要求转生 1 阶），导致开增益后切图失败。
+
 ## [v1.14.4] - 2026-10-26
 
 ### 修复：世界Boss 属性全为 0 时误选「力量」为首选属性
