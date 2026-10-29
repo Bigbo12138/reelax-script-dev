@@ -920,7 +920,12 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (ignoreds.length) {
       html += `<div style="margin-top:8px;font-size:12px;color:#ff9800;background:#2a1d0d;border:1px solid #8a5a1a;border-radius:6px;padding:4px 6px;">已忽略 ${ignoreds.length} 条（不参与重挂/下架）</div>` + ignoreds.map(renderRow).join('');
     }
-    region.innerHTML = '<div style="font-size:12px;color:#4fc3f7;background:#0d2230;border:1px solid #2e7d8a;border-radius:6px;padding:4px 6px;margin-bottom:6px;">最低价检测：以下挂单非市场最低价，勾选后点「勾选重挂（按设置挂单）」统一重挂</div>' + html + '<div id="r1cm-cheap-region-gap"></div>';
+    const normalAllChecked = normal.length > 0 && normal.every((it) => _nonMinChecked.has(String(it.id)));
+    region.innerHTML = '<div style="font-size:12px;color:#4fc3f7;background:#0d2230;border:1px solid #2e7d8a;border-radius:6px;padding:4px 6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+      + '<span>最低价检测：以下挂单非市场最低价，勾选后点「勾选重挂（按设置挂单）」统一重挂</span>'
+      + '<label id="r1cm-cheap-allsel" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;white-space:nowrap;color:#2f9e44;font-weight:bold;">'
+      + '<input type="checkbox" id="r1cm-cheap-allsel-cb"' + (normalAllChecked ? ' checked' : '') + (normal.length ? '' : ' disabled') + ' style="width:14px;height:14px;margin:0;accent-color:#2f9e44;cursor:pointer;"/>全选</label>'
+      + '</div>' + html + '<div id="r1cm-cheap-region-gap"></div>';
     renderGapSection('sell', 'r1cm-log'); // 追加「可议价」建议区块（订单区之后）
     region.onclick = (e) => {
       const row = e.target.closest && e.target.closest('[data-id]');
@@ -950,6 +955,18 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         if (c.checked) _nonMinChecked.add(id); else _nonMinChecked.delete(id);
       });
     });
+    const allSelCb = document.getElementById('r1cm-cheap-allsel-cb');
+    if (allSelCb) {
+      allSelCb.addEventListener('change', () => {
+        const on = allSelCb.checked;
+        // 只作用于未忽略的正常挂单（已忽略的不可勾选，不参与重挂）
+        for (const it of normal) {
+          const id = String(it.id);
+          if (on) _nonMinChecked.add(id); else _nonMinChecked.delete(id);
+        }
+        renderCheapList();
+      });
+    }
     // 不强制滚动到底部：忽略/勾选后保持当前滚动位置，避免用户反复上滑
   }
   function clearCheapList() { clearGapSection('r1cm-log'); const r = document.getElementById('r1cm-cheap-region'); if (r) r.remove(); }
@@ -3443,6 +3460,8 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
       const r = await placeBuyOrder(fid, it.name, limitUnitPrice, quantity);
       if (r.ok) {
         okN++;
+        // 挂单成功的鱼取消勾选，避免下次重复发布；失败的保留勾选以便重试
+        bargainState.checked.delete(fid);
         if (st) st.textContent = `${i + 1}/${idList.length} ✅ ${r.msg}`;
       } else {
         failN++;
@@ -3450,6 +3469,8 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
       }
       await sleep(300);
     }
+    // 完成挂单后按最新勾选状态重渲染，使成功项复选框同步取消
+    if (typeof bargainState.render === 'function') { try { bargainState.render(); } catch (_e) {} }
     if (st) st.textContent = `—— 求购完成：成功 ${okN} / 失败 ${failN} / 跳过 ${skippedN} ——`;
     if (btn) btn.disabled = false;
   }
