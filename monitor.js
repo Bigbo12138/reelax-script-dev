@@ -2906,7 +2906,7 @@ const WORLD_BOSS_MULT = { weakness: 2.0, normal: 1.0, defense: 0.5 };
 let worldBossCheckTimer = null;
 let worldBossInProgress = false;
 let worldBossSelectInProgress = false;
-let worldBossHandledSig = null;   // 最近一次成功报名的 (sessionId, targetStat) 签名，用于去重（避免同一场重复报名+通知）
+let worldBossHandledSig = null;   // 最近一次成功报名的 sessionId，用于去重（同一场只报一次，避免属性翻转反复报名+通知）
 
 // 根据 boss 的 weakness/defense 标记，给 4 个属性各自配倍率。
 // 返回 { strength:2.0, intelligence:1.0, ... }；既非弱点也非防御的属性取 normal(1.0)。
@@ -3062,6 +3062,8 @@ function computeWorldBossPlan(data, playerTotals, snap) {
     },
     targetStat: regTarget,          // 实际报名/改选目标（洗点武装时=洗点后最优，否则=当前加点最优）
     baseTargetStat: targetStat,     // 不洗点·当前加点最优（未被洗点分支覆写时相同）
+    // 未拿到有效属性值（stats 查询失败）→ targetStat 是「弱点」退化值，不可据此改选
+    totalsUnknown: !(playerTotals && Object.values(playerTotals).some((v) => Number(v) > 0)),
     expected: bestPlan.expected,
     best: bestPlan.best,
     respec: respec,                 // 非空=本场已武装「全洗弱点」，regStat 为洗点后要全投的属性
@@ -3255,11 +3257,17 @@ async function autoSelectWorldBoss() {
     m.lastWorldBossAuto = { ok: false, reason: 'no-target', boss: w.boss.name, changed: false, at: Date.now() };
     return;
   }
-  // 去重：同一场已成功报名过该目标属性（即使刷新未及时回显），不再重复报名+通知
-  const sig = w.sessionId + '|' + w.targetStat;
-  if (worldBossHandledSig === sig) {
+  // 属性数据缺失（stats 查询失败/全 0）→ targetStat 是「弱点」退化值，此时改选会把已报的最优属性
+  // 覆盖成弱点（例如上次按总值选了智力，这次读不到 stats 就翻回力量），造成同一场反复改选。直接跳过。
+  if (w.totalsUnknown) {
+    m.lastWorldBossAuto = { ok: true, reason: 'totals-unknown', boss: w.boss.name, targetStat: w.targetStat, prevStat: w.player.selectedStat, changed: false, at: Date.now() };
+    console.log('[monitor] 世界Boss自动报名: 属性数据缺失，无法判定最优属性，本场跳过改选');
+    return;
+  }
+  // 去重：同一场（sessionId）已成功报名过就不再改选，避免属性翻转（智力↔力量）反复报名+通知。
+  if (worldBossHandledSig === w.sessionId) {
     m.lastWorldBossAuto = { ok: true, reason: 'already-optimal', boss: w.boss.name, targetStat: w.targetStat, prevStat: w.player.selectedStat, changed: false, at: Date.now() };
-    console.log('[monitor] 世界Boss自动报名: 本场已报 ' + STAT_LABELS[w.targetStat] + '，去重跳过');
+    console.log('[monitor] 世界Boss自动报名: 本场已报过（' + STAT_LABELS[w.player.selectedStat || w.targetStat] + '），去重跳过');
     return;
   }
   if (!w.shouldChange) {
@@ -3287,7 +3295,7 @@ async function autoSelectWorldBoss() {
     at: Date.now(),
   };
   if (r && r.ok) {
-    worldBossHandledSig = w.sessionId + '|' + w.targetStat; // 记录本次成功签名，后续去重
+    worldBossHandledSig = w.sessionId; // 记录本场成功签名（只按场次去重），后续不再改选
     sendWebhook('[Reelax] ⚔️ 世界Boss自动报名: ' + w.boss.name + ' 已选 ' + STAT_LABELS[w.targetStat]
       + (usingRespec
         ? '（全洗弱点，battleAt 自动全投 ' + STAT_LABELS[w.respec.regStat] + (w.respec.isWeakWin ? '·弱点' : '·洗点后最优') + '）'

@@ -4,6 +4,12 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.14.11] - 2026-10-29
+
+### 修复：世界 Boss 自动报名同一场反复改选
+- `monitor.js`：新增 `computeWorldBossPlan().totalsUnknown`——当 `playerTotals` 缺失或全为 0（stats 查询失败）时，`targetStat` 是由「弱点」退化得出的，不可据此改选。此时 `autoSelectWorldBoss()` 直接以 `reason: 'totals-unknown'` 跳过，避免把已报的最优属性覆盖成弱点（例如上次按总值选了智力，本次读不到 stats 就翻回力量）。
+- `monitor.js`：`worldBossHandledSig` 去重键由 `sessionId|targetStat` 改为仅 `sessionId`——同一场只要成功报名过一次就不再改选，彻底消除属性翻转（智力↔力量）导致的反复报名与重复通知。
+
 ## [v1.14.10] - 2026-10-29
 
 ### 文档：重写 README 并新增 GitHub Wiki 使用手册
