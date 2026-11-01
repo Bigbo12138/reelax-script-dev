@@ -4,6 +4,13 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.14.12] - 2026-10-31
+
+### 优化：奥术献祭资源不足以达到门槛时不再「有多少捐多少」
+- `monitor.js`（`computeSacrificePlan`）：遗物/金币/鱼三类资源统一新增「不足额即跳过」判定，`plan.shortBy` 记录距门槛还差多少；资源不足时 `plan.need = 0`、`canContribute = false`，reason 变为 `资源不足(需 N，有 M)`。原先会把可用量（哪怕远低于设定百分比门槛）一次性全捐掉，现在等窗口内资源补足后再捐。
+- `monitor.js`（`autoContributeSacrifice`）：区分 `insufficient-resources` 与 `already-met` 两种跳过原因，日志分别提示「本次跳过，等待窗口内补足后再捐」与「已达标，不再贡献」。
+- 鱼资源额外记录 `needPointsActual` / `shortBy`，reason 形如 `资源不足(需 N 分，可凑 M 分)`。
+
 ## [v1.14.11] - 2026-10-29
 
 ### 修复：世界 Boss 自动报名同一场反复改选

@@ -2680,19 +2680,24 @@ function computeSacrificePlan(data, opts) {
       const available = assets.relics != null ? assets.relics : null;
       plan.available = available;
       plan.unit = '个';
+      // 资源不足判定：可用遗物 < 达到设定门槛所需量 → 跳过（等窗口内补足再捐，不足额不捐）
+      const short = available != null && available < capLimit;
       let cap = Math.max(0, Math.min(capLimit, available != null ? available : capLimit));
-      plan.need = cap;
-      if (roundContribution >= refForPlan || cap === 0) plan.reason = '已达标';
-      else if (available != null && available < capLimit) plan.reason = '遗物不足';
+      plan.need = short ? 0 : cap;
+      plan.shortBy = short ? Math.max(0, capLimit - available) : 0;
+      if (roundContribution >= refForPlan || capLimit <= 0) plan.reason = '已达标';
+      else if (short) plan.reason = '资源不足(需' + capLimit + '，有' + available + ')';
       else plan.canContribute = true;
     } else if (type === 'gold') {
       const available = assets.gold != null ? assets.gold : null;
       plan.available = available;
       plan.unit = '金';
+      const short = available != null && available < capLimit;
       let cap = Math.max(0, Math.min(capLimit, available != null ? available : capLimit));
-      plan.need = cap;
-      if (roundContribution >= refForPlan || cap === 0) plan.reason = '已达标';
-      else if (available != null && available < capLimit) plan.reason = '金币不足';
+      plan.need = short ? 0 : cap;
+      plan.shortBy = short ? Math.max(0, capLimit - available) : 0;
+      if (roundContribution >= refForPlan || capLimit <= 0) plan.reason = '已达标';
+      else if (short) plan.reason = '资源不足(需' + capLimit + '，有' + available + ')';
       else plan.canContribute = true;
     } else if (type === 'fish') {
       // 鱼：capLimit 是「分」。用多稀有度鱼拼凑到目标（尽量不超太多），
@@ -2731,9 +2736,14 @@ function computeSacrificePlan(data, opts) {
       }
       plan.fishPlan = alloc;
       plan.needPoints = contributedPts;
-      plan.need = alloc.reduce((s, a) => s + a.quantity, 0);
+      // 资源不足判定：可用鱼拼凑出的分值 < 门槛所需分值 → 跳过（不足额不捐，等窗口内补足后再捐）
+      const fishShort = contributedPts < targetPts;
+      plan.need = fishShort ? 0 : alloc.reduce((s, a) => s + a.quantity, 0);
       plan.available = plan.need;
+      plan.needPointsActual = contributedPts;
+      plan.shortBy = fishShort ? Math.max(0, targetPts - contributedPts) : 0;
       if (roundContribution >= refForPlan) { plan.reason = '已达标'; }
+      else if (fishShort) { plan.reason = '资源不足(需' + targetPts + '分，可凑' + contributedPts + '分)'; }
       else if (plan.need <= 0) { plan.reason = '无可用鱼'; }
       else plan.canContribute = true;
     }
@@ -2869,8 +2879,14 @@ async function autoContributeSacrifice() {
     return;
   }
   if (!plan.canContribute || plan.need == null || plan.need <= 0) {
-    m.lastSacrificeAuto = { ok: true, reason: 'already-met', resourceType: cr.resourceType, serverPct: serverPct, contributed: 0, at: Date.now() };
-    console.log('[monitor] 奥术献祭自动贡献: ' + cr.resourceType + ' 已达标(' + (plan.reason || 'done') + ')，全服 ' + serverPct.toFixed(1) + '%，不再贡献');
+    const insufficient = /资源不足/.test(plan.reason || '');
+    m.lastSacrificeAuto = { ok: true, reason: insufficient ? 'insufficient-resources' : 'already-met', resourceType: cr.resourceType, serverPct: serverPct, contributed: 0, at: Date.now() };
+    if (insufficient) {
+      // 资源暂不足以达到设定门槛：本轮先跳过，等窗口内资源补足后下次轮询再捐
+      console.log('[monitor] 奥术献祭自动贡献: 资源不足（' + plan.reason + '），本次跳过，等待窗口内补足后再捐(' + cr.resourceType + ')');
+    } else {
+      console.log('[monitor] 奥术献祭自动贡献: ' + cr.resourceType + ' 已达标(' + (plan.reason || 'done') + ')，全服 ' + serverPct.toFixed(1) + '%，不再贡献');
+    }
     return;
   }
   console.log('[monitor] 奥术献祭自动贡献: 全服 ' + serverPct.toFixed(1) + '% ≥ ' + th + '%，贡献 ' + cr.resourceType + ' x' + plan.need + '（门槛 ' + plan.threshold + ' = target ' + plan.target + ' × ' + (m['sacrifice' + cr.resourceType.charAt(0).toUpperCase() + cr.resourceType.slice(1) + 'Pct'] || 0.5) + '%）');
