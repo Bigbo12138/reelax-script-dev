@@ -4,6 +4,16 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v1.14.13] - 2026-11-01
+
+### 修复：比赛（公会赛/个人赛）自动洗点识别不到进行中、手动开始后赛后不洗回
+- `monitor.js`（`getCompetitionState`）：赛事「进行中」判定改为按 `startAt ≤ 现在 ≤ endAt` 时间窗，不再依赖 `status === 'active'`。实测接口 `status` 只会是 `scheduled`/`completed`，从未出现 `active`，`current` 在非进行中时为 `null`、数据都在 `upcoming[]`，导致原逻辑永远识别不到进行中 → 不洗点。同时排除 `completed`/`cancelled`/`finished` 等已结束态，并取消对报名状态的判断（该游戏不报名也能参赛）。
+- `monitor.js`（`getCompetitionState`）：新增第二返回值 `inWindowOnly`，并在参数中加入 `currentBiomeId`——「进行中」需同时满足「时间窗内」且「玩家当前在比赛图」（个人赛看 `biomeId`，公会赛优先 `assignedBiomeId` 再退回 `biomeId`）。仅时间窗内但已离开比赛图时 `active=false`（不洗点、不冻结其它系统），避免比赛途中离开地图被跳过。
+- `monitor.js`（`checkCompetitionRespec`）：赛前洗点用 `active`；赛后洗回改用 `!inWindowOnly`（赛程是否真正结束），避免人已离开比赛图被误判为「已结束」而提前洗回；仅 `!inWindowOnly` 时才清空签名。
+- `monitor.js`（`getMyCurrentBiomeId` 新增）：优先 `m.currentStatus.currentBiome.id`，退回 `m.sync.boatBiomeId`，都取不到返回 `null`（保守按「不在比赛图」处理）。
+- `monitor.js`（`markManualCompStart` 新增）：手动点击「比赛开始」（`reelax-stat-allocate` / `comp-start`）时探测两赛事并登记 `_compStartSig`（优先进行中场次，否则取未结束的最近一场），使赛后结束判定有据可依——修复手动开始后因无赛前签名导致 `fireCompEndRetry` 不触发、赛后不洗回的问题；登记失败不阻断主流程。
+- `monitor.js`（`refreshCurrentStatus`）：`activeTournament` 同样改为按时间窗挑选 `current + upcoming[]`，公会赛展示的实际地图用 `assignedBiomeId || biomeId`。
+
 ## [v1.14.12] - 2026-10-31
 
 ### 优化：奥术献祭资源不足以达到门槛时不再「有多少捐多少」

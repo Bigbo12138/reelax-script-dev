@@ -513,6 +513,14 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'reelax-stat-allocate') {
     (async () => {
       const r = msg.mode === 'comp-start' ? await executeCompStart() : await executeCompEnd();
+      if (msg.mode === 'comp-start') {
+        // 手动开始：登记赛前签名，确保赛后能自动洗回
+        try {
+          const marked = await markManualCompStart();
+          if (marked.length) console.log('[monitor] 手动开始已登记赛前签名: ' + marked.join(','));
+          else console.log('[monitor] 手动开始未能匹配到已报名的赛事，赛后不会自动洗回（可稍后自动识别）');
+        } catch (_e) { /* 登记失败不阻断主流程 */ }
+      }
       sendResponse(r || { ok: false, reason: 'no-result' });
     })();
     return true;
@@ -826,40 +834,103 @@ function planCompStart(totalPoints, enduranceBase) {
   return { strength: 0, intelligence: 0, luck: Math.max(0, totalPoints - endurance), endurance: 0 };
 }
 
-// 复用游戏比赛状态：按 kind 判定对应赛事（guild=公会赛 / personal=个人赛）是否进行中。
+// 复用游戏比赛状态：按 kind 判定对应赛事（guild=公会赛 / personal=个人赛）。
 // 公会赛调 /api/guild-tournaments/overview，个人赛调 /api/tournaments/overview。
-// 两个接口的 active 赛事可能以「current」单对象 或「upcoming[] 里 status==='active' 的条目」存在
-// （实测非进行中时 current=null，数据都在 upcoming[]），故两条路径都认。
-async function getCompetitionState(kind) {
+// 实测：进行中的赛事 status 仍可能是 'scheduled'（并非字面 'active'），真正的开赛/结束由
+// startAt/endAt 时间窗决定。故不能只认 status==='active'，否则「进行中」永远识别不到 → 不洗点。
+// 判定口径（两条件同时满足才算「比赛进行中」）：
+//   1) 时间窗内：startAt ≤ 现在 ≤ endAt（排除 completed/cancelled 等已结束态）；
+//   2) 玩家当前在比赛图：个人赛用 biomeId，公会赛优先 assignedBiomeId 再退回 biomeId；
+//      currentBiomeId 为 null（当前地图未知）时视为不在比赛图。
+// 不在比赛图 → active=false，既不洗点也不冻结其它系统（完全当没比赛）。
+// 注意：不判断是否报名（这游戏不报名也能参加比赛），报名状态与本判定无关。
+// 返回：
+//   active     ：时间窗内 且 当前在比赛图（驱动 m.compActive 冻结 + 赛前洗点）；
+//   inWindowOnly：仅时间窗内（忽略地图），仅供赛后洗回判定赛程是否已结束——
+//                 免得比赛途中离开比赛图被误判为「已结束」而提前洗回。
+// 赛后洗回不走本函数的 active（恢复属性与所在地图无关），故「在比赛图」只约束赛前洗点。
+async function getCompetitionState(kind, currentBiomeId) {
   const isPersonal = kind === 'personal';
-  let active = false, endAt = null, signature = null;
-  const regCheck = (o) => !!(o && (o.isRegistered || o.entryStatus === 'registered' || o.entered === true));
+  let active = false, inWindowOnly = false, endAt = null, signature = null;
   const inWindow = (o) => {
     const starts = o.startAt ? new Date(o.startAt).getTime() : 0;
     const ends = o.endAt ? new Date(o.endAt).getTime() : 0;
     return !!ends && Date.now() <= ends && (!starts || Date.now() >= starts); // 开始 ≤ 现在 ≤ 结束
   };
+  const isEnded = (o) => {
+    const st = String((o && o.status) || '').toLowerCase();
+    return st === 'completed' || st === 'cancelled' || st === 'canceled' || st === 'finished';
+  };
+  // 赛事所在地图：个人赛用 biomeId；公会赛优先 assignedBiomeId（实际分配图）再退回 biomeId。
+  const compBiome = (o) => {
+    if (!o) return null;
+    return (isPersonal ? o.biomeId : (o.assignedBiomeId || o.biomeId)) || null;
+  };
+  const onCompBiome = (o) => !!currentBiomeId && compBiome(o) === currentBiomeId;
   const adopt = (o) => {
-    active = true;
+    inWindowOnly = true;
+    active = onCompBiome(o);
     endAt = o.endAt ? new Date(o.endAt).getTime() : 0;
     signature = (isPersonal ? 'personal:' : 'guild:') + (o.id || o.sequence || 'current');
   };
   try {
     const r = isPersonal ? await ReelaxApi.tournamentOverview() : await ReelaxApi.guildCompetitionOverview();
     const data = r.ok && r.data ? r.data : null;
-    // 候选：current 单对象 + upcoming[] 里 status==='active' 的条目（个人赛实测进行中可能在 upcoming 里）
+    // 候选：current 单对象 + upcoming[] 全部条目（不认 status==='active'，只看时间窗）
     const candidates = [];
     if (data) {
       if (data.current) candidates.push(data.current);
       if (Array.isArray(data.upcoming)) {
-        for (const t of data.upcoming) if (t && t.status === 'active') candidates.push(t);
+        for (const t of data.upcoming) if (t) candidates.push(t);
       }
     }
     for (const o of candidates) {
-      if (regCheck(o) && inWindow(o)) { adopt(o); break; }
+      if (isEnded(o)) continue;
+      if (inWindow(o)) { adopt(o); break; }
     }
   } catch (e) { /* 单场查询失败按未进行中处理 */ }
-  return { active, endAt, signature, kind: isPersonal ? 'personal' : 'guild' };
+  return { active, inWindowOnly, endAt, signature, kind: isPersonal ? 'personal' : 'guild' };
+}
+
+// 手动点击「比赛开始」时登记赛前签名：让赛后结束判定有据可依（否则 fireCompEndRetry 因无 _compStartSig 不触发）。
+// 探测两赛事：优先取「进行中」的签名；若都未在窗口内（赛前提前洗点），取各自未结束的最近一场。
+// 注意：不判断是否报名（这游戏不报名也能参加比赛）。
+// 返回实际登记的 kind 列表，便于日志/调用方提示。
+async function markManualCompStart() {
+  const marked = [];
+  const pick = async (kind) => {
+    const isPersonal = kind === 'personal';
+    try {
+      const r = isPersonal ? await ReelaxApi.tournamentOverview() : await ReelaxApi.guildCompetitionOverview();
+      const data = r.ok && r.data ? r.data : null;
+      if (!data) return null;
+      const isEnded = (o) => {
+        const st = String((o && o.status) || '').toLowerCase();
+        return st === 'completed' || st === 'cancelled' || st === 'canceled' || st === 'finished';
+      };
+      const makeSig = (o) => (isPersonal ? 'personal:' : 'guild:') + (o.id || o.sequence || 'current');
+      const cand = [];
+      if (data.current) cand.push(data.current);
+      if (Array.isArray(data.upcoming)) for (const t of data.upcoming) if (t) cand.push(t);
+      const now = Date.now();
+      const inWin = (o) => {
+        const s = o.startAt ? new Date(o.startAt).getTime() : 0;
+        const e = o.endAt ? new Date(o.endAt).getTime() : 0;
+        return !!e && now <= e && (!s || now >= s);
+      };
+      const live = cand.find((o) => !isEnded(o) && inWin(o));
+      if (live) return makeSig(live);
+      const upcoming = cand
+        .filter((o) => !isEnded(o))
+        .sort((a, b) => (new Date(a.startAt || 0).getTime()) - (new Date(b.startAt || 0).getTime()))[0];
+      return upcoming ? makeSig(upcoming) : null;
+    } catch (_e) { return null; }
+  };
+  for (const kind of ['guild', 'personal']) {
+    const sig = await pick(kind);
+    if (sig) { _compStartSig[kind] = sig; _compEndSig[kind] = null; _compEndRetry[kind] = null; marked.push(kind); }
+  }
+  return marked;
 }
 
 // 重置+分配期间，临时停用内置自动加点，避免被 checkAndAllocate 抢占；ms 后恢复原设定
@@ -1018,6 +1089,8 @@ async function runCompEndAttempt(kind) {
 }
 
 // 发起赛后加点退避重试：同一 kind 已有进行中任务则忽略（防重复）
+// 结束判定依赖赛前签名 _compStartSig：没跑过赛前洗点（脚本中途启动且未手动开始）则不洗回。
+// 手动点击「比赛开始」会登记 _compStartSig（见 reelax-stat-allocate comp-start 分支），故手动开始也能赛后洗回。
 function fireCompEndRetry(kind) {
   if (!_compStartSig[kind]) return;
   if (_compEndSig[kind] === _compStartSig[kind]) return; // 已完成无需重试
@@ -1027,21 +1100,31 @@ function fireCompEndRetry(kind) {
   runCompEndAttempt(kind);
 }
 
+// 取玩家当前所在地图 id：优先用 refreshCurrentStatus 每 30s 刷新的 currentBiome，
+// 其次退回 fishing/sync 里的 boatBiomeId（仅船队成员才有，船员未必等于个人当前图）。
+// 都取不到返回 null（比赛洗点判定里视为「不在比赛图」，保守不洗）。
+function getMyCurrentBiomeId() {
+  const cur = m.currentStatus && m.currentStatus.currentBiome;
+  if (cur && cur.id) return cur.id;
+  if (m.sync && m.sync.boatBiomeId) return m.sync.boatBiomeId;
+  return null;
+}
+
 async function checkCompetitionRespec() {
   const guildOn = m.compAutoRespec === true;
   const personalOn = m.compPersonalRespec === true;
   if (!guildOn && !personalOn) { m.compActive = false; m.compPersonalActive = false; return; }
 
-  const wasGuildActive = m.compActive;
-  const wasPersonalActive = m.compPersonalActive;
+  const myBiomeId = getMyCurrentBiomeId();
 
   // 公会赛
   let guildActive = false, guildSig = null;
   if (guildOn) {
     try {
-      const g = await getCompetitionState('guild');
+      const g = await getCompetitionState('guild', myBiomeId);
       guildActive = !!g.active; guildSig = g.signature;
       if (guildActive) {
+        // 时间窗内 且 在比赛图 → 赛前洗点
         if (_compStartSig.guild !== guildSig) {
           await executeCompStart();
           _compStartSig.guild = guildSig;
@@ -1049,10 +1132,10 @@ async function checkCompetitionRespec() {
           _compEndRetry.guild = null; // 新比赛开始，重置旧退避任务
           console.log('[monitor] 公会赛开始洗点(全运气)');
         }
-      } else if (m.compActive && _compStartSig.guild && (_compEndSig.guild !== _compStartSig.guild)) {
-        // 赛后加点：交给退避重试调度（30s/1min/2min/4min，最多5次，最后失败发 webhook）
+      } else if (!g.inWindowOnly && _compStartSig.guild && (_compEndSig.guild !== _compStartSig.guild)) {
+        // 时间窗已过（赛程真正结束，即便人已离开比赛图）：赛后洗回，交给退避重试调度
         fireCompEndRetry('guild');
-      } else if (!m.compActive && !guildActive) {
+      } else if (!g.inWindowOnly && !guildActive) {
         _compStartSig.guild = null;
         _compEndSig.guild = null;
       }
@@ -1063,9 +1146,10 @@ async function checkCompetitionRespec() {
   let personalActive = false, personalSig = null;
   if (personalOn) {
     try {
-      const p = await getCompetitionState('personal');
+      const p = await getCompetitionState('personal', myBiomeId);
       personalActive = !!p.active; personalSig = p.signature;
       if (personalActive) {
+        // 时间窗内 且 在比赛图 → 赛前洗点
         if (_compStartSig.personal !== personalSig) {
           await executeCompStart();
           _compStartSig.personal = personalSig;
@@ -1073,10 +1157,10 @@ async function checkCompetitionRespec() {
           _compEndRetry.personal = null; // 新比赛开始，重置旧退避任务
           console.log('[monitor] 个人赛开始洗点(全运气)');
         }
-      } else if (m.compPersonalActive && _compStartSig.personal && (_compEndSig.personal !== _compStartSig.personal)) {
-        // 赛后加点：交给退避重试调度（30s/1min/2min/4min，最多5次，最后失败发 webhook）
+      } else if (!p.inWindowOnly && _compStartSig.personal && (_compEndSig.personal !== _compStartSig.personal)) {
+        // 时间窗已过（赛程真正结束，即便人已离开比赛图）：赛后洗回，交给退避重试调度
         fireCompEndRetry('personal');
-      } else if (!m.compPersonalActive && !personalActive) {
+      } else if (!p.inWindowOnly && !personalActive) {
         _compStartSig.personal = null;
         _compEndSig.personal = null;
       }
@@ -3796,13 +3880,31 @@ async function refreshCurrentStatus() {
         guildBoost = { isActive: true, endsAt: cur.guildBoostEndsAt, remainingMin: fmtRemainMin(cur.guildBoostEndsAt) };
       }
     }
-    // active 赛事（工会赛 > 个人赛）
+    // 进行中赛事（工会赛 > 个人赛）
+    // 实测：接口 status 只会是 'scheduled'/'completed'，从无 'active'，current 非进行中时为 null，
+    // 数据在 upcoming[]。进行中只能靠 startAt ≤ 现在 ≤ endAt 判定（不看 status==='active'）。
     let activeTournament = null;
-    const g = (guildCompRes && guildCompRes.ok && guildCompRes.data && guildCompRes.data.current) ? guildCompRes.data.current : null;
-    const p = (personalRes && personalRes.ok && personalRes.data && personalRes.data.current) ? personalRes.data.current : null;
-    if (g && g.status === 'active') {
-      activeTournament = { kind: 'guild', biomeId: g.biomeId, biomeName: CURRENT_STATUS_BIOME_CN[g.biomeId] || g.biomeId, sequence: g.sequence, endAt: g.endAt };
-    } else if (p && p.status === 'active') {
+    const pickLive = (res) => {
+      const d = res && res.ok ? res.data : null;
+      if (!d) return null;
+      const cand = [];
+      if (d.current) cand.push(d.current);
+      if (Array.isArray(d.upcoming)) for (const t of d.upcoming) if (t) cand.push(t);
+      const now = Date.now();
+      for (const o of cand) {
+        const st = String(o && o.status || '').toLowerCase();
+        if (st === 'completed' || st === 'cancelled' || st === 'canceled' || st === 'finished') continue;
+        const s = o.startAt ? Date.parse(o.startAt) : 0;
+        const e = o.endAt ? Date.parse(o.endAt) : 0;
+        if (e && now <= e && (!s || now >= s)) return o;
+      }
+      return null;
+    };
+    const g = pickLive(guildCompRes);
+    const p = pickLive(personalRes);
+    if (g) {
+      activeTournament = { kind: 'guild', biomeId: g.assignedBiomeId || g.biomeId, biomeName: CURRENT_STATUS_BIOME_CN[g.assignedBiomeId || g.biomeId] || (g.assignedBiomeId || g.biomeId), sequence: g.sequence, endAt: g.endAt };
+    } else if (p) {
       activeTournament = { kind: 'personal', biomeId: p.biomeId, biomeName: CURRENT_STATUS_BIOME_CN[p.biomeId] || p.biomeId, sequence: p.sequence, endAt: p.endAt };
     }
 
