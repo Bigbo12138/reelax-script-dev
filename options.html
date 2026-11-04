@@ -147,28 +147,10 @@
       自动加专精（每 10 分钟把当前地图专精点全部投入）
     </label>
     <label>
-      加点目标属性：
-      <select id="statTarget">
-        <option value="luck" selected>运气</option>
-        <option value="intelligence">智力</option>
-        <option value="strength">力量</option>
-        <option value="endurance">耐力</option>
-      </select>
-      <span class="hint">主属性（未达阈值前，待分配点全加主属性）</span>
+      加点优先级（从上到下依次补到目标；目标=0 表示不限/吃剩余，上一项达标后剩余点流入下一项）：
     </label>
-    <label>
-      主属性总计阈值（达该值后，剩余点分给副属性；0=不启用，全加主属性）：
-      <input type="number" id="primaryTotalTarget" min="0" step="100" style="width: 100px;" />
-    </label>
-    <label>
-      副属性（主属性达阈值后，剩余点数投入的属性）：
-      <select id="allocSecondary">
-        <option value="luck" selected>运气</option>
-        <option value="intelligence">智力</option>
-        <option value="strength">力量</option>
-        <option value="endurance">耐力</option>
-      </select>
-    </label>
+    <div id="statPriorityList" style="display:flex;flex-direction:column;gap:4px;max-width:420px;"></div>
+    <span class="hint">「目标」为该属性<b>总点数</b>（含遗物/图腾等加成）。全部有目标且仍有点数剩余时，剩余点全加最后一项。</span>
   </fieldset>
 
   <fieldset>

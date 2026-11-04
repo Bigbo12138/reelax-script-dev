@@ -6,30 +6,52 @@ const DEFAULTS = {
 function el(id) { return document.getElementById(id); }
 
 // ---------- 比赛加点逻辑（与 monitor.js 的 computeStatPlan 保持一致，供 popup 预览）----------
-// opts: { totalPoints, flatBonusStrength, strengthTarget, multiplier, enduranceBase, secondary }
-// 计算赛后加点方案：力量补到 strengthTarget(总力量)，剩余全给 secondary(默认运气)。
-function computeStatPlan(opts) {
+function normalizeStatPriority(raw) {
   const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
+  const blank = () => STAT_KEYS.map((k) => ({ stat: k, target: 0 }));
+  if (!Array.isArray(raw) || !raw.length) return blank();
+  const seen = new Set();
+  const out = [];
+  for (const it of raw) {
+    if (!it || !STAT_KEYS.includes(it.stat) || seen.has(it.stat)) continue;
+    seen.add(it.stat);
+    const t = Number(it.target);
+    out.push({ stat: it.stat, target: Number.isFinite(t) && t > 0 ? Math.floor(t) : 0 });
+  }
+  for (const k of STAT_KEYS) if (!seen.has(k)) out.push({ stat: k, target: 0 });
+  return out;
+}
+function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve) {
+  const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
+  const body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
+  let remain = Math.max(0, unspent | 0);
+  const reserve = Math.min(Math.max(0, enduranceReserve | 0), remain);
+  remain -= reserve;
+  const list = normalizeStatPriority(priority);
+  const cur = (k) => { const v = Number(statsTotal && statsTotal[k]); return Number.isFinite(v) && v > 0 ? v : 0; };
+  const order = [];
+  for (const it of list) {
+    if (remain <= 0) break;
+    if (!it.target) { body[it.stat] += remain; order.push({ stat: it.stat, added: remain }); remain = 0; break; }
+    const need = Math.max(0, it.target - cur(it.stat));
+    if (need <= 0) continue;
+    const give = Math.min(need, remain);
+    body[it.stat] += give; order.push({ stat: it.stat, added: give }); remain -= give;
+  }
+  if (remain > 0 && list.length) {
+    const last = list[list.length - 1].stat;
+    body[last] += remain;
+    const hit = order.find((o) => o.stat === last);
+    if (hit) hit.added += remain; else order.push({ stat: last, added: remain });
+    remain = 0;
+  }
+  return { body, order, enduranceReserve: reserve };
+}
+// opts: { totalPoints, postResetTotal, priority, enduranceBase }
+function computeStatPlan(opts) {
   const totalPoints = Math.max(0, (opts.totalPoints | 0));
-  const flatBonus = Math.max(0, opts.flatBonusStrength || 0);
-  const target = Math.max(0, opts.strengthTarget || 0);
-  const mult = (opts.multiplier > 0) ? opts.multiplier : 1;
-  // 总点先扣耐力预留（如 4596−100=4496 参与力量/智力分配），点数不足时耐力不超发
-  const endurance = Math.min(Math.max(0, opts.enduranceBase | 0), totalPoints);
-  const secondary = STAT_KEYS.includes(opts.secondary) ? opts.secondary : 'luck';
-  const needRaw = Math.floor((target - flatBonus) / mult);
-  const needStrength = Math.max(0, Math.min(needRaw, totalPoints - endurance));
-  const remain = Math.max(0, totalPoints - needStrength - endurance);
-  // 耐力预留只是计算用（从总点里扣除这部分不参与力量/运气分配），
-  // 真正分配时不发给耐力，全部点数只投力量+次要属性
-  const body = { strength: needStrength, intelligence: 0, luck: 0, endurance: 0 };
-  if (remain > 0) body[secondary] = remain;
-  return {
-    body, needStrength, secondaryPoints: remain > 0 ? remain : 0,
-    flatBonusStrength: flatBonus, strengthTarget: target,
-    reachedStrength: flatBonus + needStrength * mult, endurance, secondary,
-    capped: needRaw > needStrength,
-  };
+  const plan = planPriorityAllocation(opts.postResetTotal || {}, totalPoints, opts.priority, opts.enduranceBase);
+  return { body: plan.body, order: plan.order, endurance: plan.enduranceReserve, totalPoints, priority: normalizeStatPriority(opts.priority) };
 }
 const STAT_CN = { strength: '力量', intelligence: '智力', luck: '运气', endurance: '耐力' };
 
@@ -41,11 +63,12 @@ function renderAlloc() {
     if (m.compActive) { compEl.textContent = '🏁 比赛中'; compEl.className = 'bad'; }
     else { compEl.textContent = '未比赛'; compEl.className = ''; }
   }
-  // 输入框仅在尚未被用户编辑时同步后台值，避免打断输入
-  const tEl = el('al-str-target');
-  if (tEl && document.activeElement !== tEl && m.strengthTarget != null) tEl.value = m.strengthTarget;
-  const sEl = el('al-secondary');
-  if (sEl && m.allocSecondary) sEl.value = m.allocSecondary;
+  // 优先级摘要（来自设置页）
+  const priEl = el('al-priority');
+  if (priEl) {
+    const list = normalizeStatPriority(m.statPriority);
+    priEl.textContent = list.map((p) => `${STAT_CN[p.stat] || p.stat}${p.target > 0 ? '→' + Number(p.target).toLocaleString() : '(余)'}`).join(' > ');
+  }
   const eEl = el('al-endurance');
   if (eEl && document.activeElement !== eEl && m.enduranceBase != null) eEl.value = m.enduranceBase;
   const aEl = el('al-auto');
@@ -61,8 +84,8 @@ function renderAlloc() {
       const t = new Date(r.at).toLocaleTimeString();
       if (r.ok) {
         const phase = r.phase === 'start' ? '赛前' : '赛后';
-        const detail = r.phase === 'end' && r.body
-          ? `力${r.body.strength} ${(STAT_CN[r.secondary] || r.secondary || '智')}${r.body[r.secondary] || 0}`
+        const detail = r.phase === 'end' && Array.isArray(r.order)
+          ? r.order.filter((o) => o.added > 0).map((o) => `${STAT_CN[o.stat] || o.stat}+${o.added}`).join(' ')
           : (r.body ? `运${r.body.luck}` : '');
         rEl.textContent = `✅ ${phase} ${detail} ${t}`;
         rEl.className = 'ok';
@@ -87,16 +110,14 @@ async function refreshAllocPlan() {
       return;
     }
     const bonusEl = el('al-bonus');
-    if (bonusEl) bonusEl.textContent = (res.estFlatBonusStrength != null ? Number(res.estFlatBonusStrength).toLocaleString() : '—') + ' / 总点 ' + Number(res.totalPoints || 0).toLocaleString();
+    if (bonusEl) bonusEl.textContent = '总点 ' + Number(res.totalPoints || 0).toLocaleString();
     const p = res.plan;
     const prevEl = el('al-preview');
     if (prevEl && p) {
-      const cn = STAT_CN[p.secondary] || p.secondary;
-      let txt = `力量 +${p.needStrength}`;
-      txt += ` ；${cn} +${p.secondaryPoints}`;
-      if (p.capped) txt += '（点数不足，未达标）';
-      prevEl.textContent = txt;
-      prevEl.title = `加成(力量)=${p.flatBonusStrength}，可用总点=${res.totalPoints}`;
+      const txt = (p.order || []).filter((o) => o.added > 0)
+        .map((o) => `${STAT_CN[o.stat] || o.stat}+${o.added}`).join(' ');
+      prevEl.textContent = txt || '（无待分配点）';
+      prevEl.title = `可用总点=${res.totalPoints}`;
     }
   } catch (e) {
     console.error('[popup] 预览失败', e);
@@ -104,15 +125,6 @@ async function refreshAllocPlan() {
 }
 
 function setupAllocControls() {
-  const tEl = el('al-str-target');
-  if (tEl) tEl.addEventListener('change', () => {
-    const v = Number(tEl.value) || 0;
-    browser.storage.local.set({ strengthTarget: v }).then(refreshAllocPlan);
-  });
-  const sEl = el('al-secondary');
-  if (sEl) sEl.addEventListener('change', () => {
-    browser.storage.local.set({ allocSecondary: sEl.value }).then(refreshAllocPlan);
-  });
   const eEl = el('al-endurance');
   if (eEl) eEl.addEventListener('change', () => {
     browser.storage.local.set({ enduranceBase: Number(eEl.value) || 0 }).then(refreshAllocPlan);

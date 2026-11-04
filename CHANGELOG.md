@@ -4,6 +4,25 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.0.0] - 2026-11-01
+
+### 破坏性变更：加点系统改为「多级优先级」模型
+**配置键变更（旧配置不再生效，需在设置页重新配置加点优先级）：**
+| 旧配置键 | 状态 | 替代 |
+|---|---|---|
+| `statTarget` | 移除 | `statPriority[].stat` 的首项 |
+| `primaryTotalTarget` | 移除 | `statPriority[].target` |
+| `allocSecondary` | 移除 | `statPriority` 中后续项 |
+| `strengthTarget` | 移除 | `statPriority` 中力量项的 `target` |
+| `statPriority` | **新增** | 有序数组 `[{stat, target}, ...]` |
+
+- 默认优先级：`运气 → 智力 → 力量 → 耐力`，各项 `target: 0`（即 `运气` 吃全部剩余点，行为与旧版「全加运气」一致）。
+- 语义：按数组顺序逐项把该属性补到 `target`（**总点数**口径，含遗物/图腾等加成）；`target=0` 表示不限、吃掉当前剩余点；若全部项都有目标且仍有点数剩余，则全加最后一项兜底。
+- `monitor.js`：新增 `normalizeStatPriority()`、`planPriorityAllocation()` 纯函数；`autoAllocate` 改为按优先级分配，比赛期间（`allocStrategy='competition'`）仍全加运气；读 `stats` 失败时保守全加优先级第一项。`computeStatPlan()` 重写为优先级口径，`executeCompEnd()` / `pityTriggerRestore()` 统一用「洗点后总点数」`postResetTotal` 计算。
+- `options.html` / `options.js`：加点区改为可上下排序的优先级列表，每项可设 `target`（0=吃剩余），新增 `normalizeStatPriority` / `renderStatPriority` / `moveStatPriority`。
+- `popup.html` / `popup.js`：移除「力量目标」「次要属性」输入，改为展示当前优先级摘要与按优先级计算的赛后预览。
+- 移除 `executeCompEnd()` 的赛后「二次校准」逻辑（旧逻辑专门补 `strengthTarget` 差额，优先级模型下不再适用）。
+
 ## [v1.14.13] - 2026-11-01
 
 ### 修复：比赛（公会赛/个人赛）自动洗点识别不到进行中、手动开始后赛后不洗回
@@ -13,6 +32,7 @@
 - `monitor.js`（`getMyCurrentBiomeId` 新增）：优先 `m.currentStatus.currentBiome.id`，退回 `m.sync.boatBiomeId`，都取不到返回 `null`（保守按「不在比赛图」处理）。
 - `monitor.js`（`markManualCompStart` 新增）：手动点击「比赛开始」（`reelax-stat-allocate` / `comp-start`）时探测两赛事并登记 `_compStartSig`（优先进行中场次，否则取未结束的最近一场），使赛后结束判定有据可依——修复手动开始后因无赛前签名导致 `fireCompEndRetry` 不触发、赛后不洗回的问题；登记失败不阻断主流程。
 - `monitor.js`（`refreshCurrentStatus`）：`activeTournament` 同样改为按时间窗挑选 `current + upcoming[]`，公会赛展示的实际地图用 `assignedBiomeId || biomeId`。
+
 
 ## [v1.14.12] - 2026-10-31
 

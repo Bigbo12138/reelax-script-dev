@@ -23,12 +23,16 @@ const MONITOR_DEFAULTS = {
   feishuReceiveIdType: 'open_id', // 接收人标识类型：open_id | user_id | email | chat_id | department_id
   feishuReceiveId: '',       // 接收人标识（如 open_id）
   autoAllocate: true,     // 自动加点（检测 unspentStatPoints>0 自动分配）
-  statTarget: 'luck',         // 加点目标属性（主属性）：strength/intelligence/luck/endurance
-  primaryTotalTarget: 0,      // 主属性总计阈值：主属性总计达到该值后，剩余点数分给副属性；0=不启用（全加主属性，保持旧行为）
-  allocStrategy: 'manual',   // 加点策略：manual=沿用 statTarget；competition=比赛专用(开始全运气/结束赛后加点)
-  strengthTarget: 10500,     // 赛后目标总力量（total 已含图腾3%等倍率加成，无需手动扣减）
-  allocSecondary: 'luck',     // 赛后剩余点数投入的属性
-  enduranceBase: 0,          // 赛后保留的耐力 base 点数（计算用，不实际分配；0=全部点数投力量+运气）
+  // 多级优先级加点：按数组顺序逐项补到 target（总点数含加成），上一项达标后剩余点流入下一项。
+  // target=0 或不限 = 该项吃剩余；末尾若无 target=0 项且点数还有剩，则全加最后一项。
+  statPriority: [
+    { stat: 'luck',         target: 0 },
+    { stat: 'intelligence', target: 0 },
+    { stat: 'strength',     target: 0 },
+    { stat: 'endurance',    target: 0 },
+  ],
+  allocStrategy: 'manual',   // 加点策略：manual=沿用优先级；competition=比赛专用(开始全运气/结束按优先级洗回)
+  enduranceBase: 0,          // 耐力预留 base 点数（计算用，不实际分配；0=不预留）
   compAutoRespec: false,    // 公会赛比赛自动洗点开关（开始全运气 / 结束赛后加点）；默认关，需要时手动开启
   compPersonalRespec: false, // 个人赛比赛自动洗点（同公会赛逻辑，对 /api/tournaments/overview 的个人赛生效）；默认关
   gearAutoSell: true,        // 装备自动出售（API 版，每 6 分钟卖出所选品级）
@@ -95,11 +99,8 @@ const m = window.__monitorStatus = {
   feishuReceiveIdType: MONITOR_DEFAULTS.feishuReceiveIdType, // receive_id_type
   feishuReceiveId: MONITOR_DEFAULTS.feishuReceiveId, // 接收人 open_id/user_id 等
   autoAllocate: MONITOR_DEFAULTS.autoAllocate, // 自动加点开关
-  statTarget: MONITOR_DEFAULTS.statTarget,     // 加点目标属性
-  primaryTotalTarget: MONITOR_DEFAULTS.primaryTotalTarget, // 主属性总计阈值（达后分给副属性）
+  statPriority: MONITOR_DEFAULTS.statPriority.map((p) => ({ ...p })), // 多级优先级加点
   allocStrategy: MONITOR_DEFAULTS.allocStrategy,
-  strengthTarget: MONITOR_DEFAULTS.strengthTarget,
-  allocSecondary: MONITOR_DEFAULTS.allocSecondary,
   enduranceBase: MONITOR_DEFAULTS.enduranceBase,
   compAutoRespec: MONITOR_DEFAULTS.compAutoRespec,
   compPersonalRespec: MONITOR_DEFAULTS.compPersonalRespec,
@@ -226,14 +227,9 @@ async function monitorLoadConfig() {
     m.feishuReceiveId = String(cfg.feishuReceiveId || '').trim();
     m.autoAllocate = cfg.autoAllocate !== false;
     m.autoMastery = cfg.autoMastery !== false;
-    m.statTarget = ['strength', 'intelligence', 'luck', 'endurance'].includes(cfg.statTarget)
-      ? cfg.statTarget : MONITOR_DEFAULTS.statTarget;
+    m.statPriority = normalizeStatPriority(cfg.statPriority);
     m.allocStrategy = ['manual', 'competition'].includes(cfg.allocStrategy)
       ? cfg.allocStrategy : MONITOR_DEFAULTS.allocStrategy;
-    m.primaryTotalTarget = Number(cfg.primaryTotalTarget) > 0 ? Number(cfg.primaryTotalTarget) : 0;
-    m.strengthTarget = Number(cfg.strengthTarget) > 0 ? Number(cfg.strengthTarget) : MONITOR_DEFAULTS.strengthTarget;
-    m.allocSecondary = ['strength', 'intelligence', 'luck', 'endurance'].includes(cfg.allocSecondary)
-      ? cfg.allocSecondary : MONITOR_DEFAULTS.allocSecondary;
     m.enduranceBase = Number(cfg.enduranceBase) >= 0 ? Number(cfg.enduranceBase) : MONITOR_DEFAULTS.enduranceBase;
     m.compAutoRespec = cfg.compAutoRespec === true;
     m.compPersonalRespec = cfg.compPersonalRespec === true;
@@ -489,21 +485,22 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const baseSum = pre.player.stats?.base
         ? STAT_KEYS.reduce((s, k) => s + (pre.player.stats.base[k] || 0), 0) : 0;
       const totalPts = (pre.player.unspentStatPoints || 0) + baseSum; // 洗点后可用总点数
-      // 力量加成 ≈ 总力量 − base力量（只看力量维度的 base；忽略遗物倍率，预览够用）
-      const estFlat = Math.max(0, (pre.player.stats?.total?.strength || 0) - (pre.player.stats?.base?.strength || 0));
+      // 洗点后各属性总点数 ≈ 当前 total − base（洗后 base 归零，仅剩加成）
+      const postResetTotal = {};
+      for (const k of STAT_KEYS) {
+        postResetTotal[k] = Math.max(0, (pre.player.stats?.total?.[k] || 0) - (pre.player.stats?.base?.[k] || 0));
+      }
       const plan = computeStatPlan({
         totalPoints: totalPts,
-        flatBonusStrength: estFlat,
-        strengthTarget: m.strengthTarget,
-        multiplier: 1,
+        postResetTotal,
+        priority: m.statPriority,
         enduranceBase: m.enduranceBase,
-        secondary: m.allocSecondary,
       });
       sendResponse({
         ok: true,
         compActive: m.compActive,
         current: { unspent: pre.player.unspentStatPoints, base: pre.player.stats?.base, total: pre.player.stats?.total },
-        estFlatBonusStrength: estFlat,
+        postResetTotal,
         totalPoints: totalPts,
         plan,
       });
@@ -693,6 +690,67 @@ const ALLOCATE_MIN_INTERVAL_MS = 30000; // 加点失败重试节流
 // 签名请求统一走 api.js 的 ReelaxApi.*（页面上下文签名，规避写操作 Referer 校验）。
 
 // 自动加点：检测到待分配属性点 → 页面上下文签名分配（一次性全加）
+
+// —— 多级优先级加点 ——
+// 归一化优先级配置：保证 4 属性各出现一次、顺序合法、target 为非负整数（0=不限/吃剩余）。
+function normalizeStatPriority(raw) {
+  const blank = () => MONITOR_DEFAULTS.statPriority.map((p) => ({ stat: p.stat, target: 0 }));
+  if (!Array.isArray(raw) || !raw.length) return blank();
+  const seen = new Set();
+  const out = [];
+  for (const it of raw) {
+    if (!it || !STAT_KEYS.includes(it.stat) || seen.has(it.stat)) continue;
+    seen.add(it.stat);
+    const t = Number(it.target);
+    out.push({ stat: it.stat, target: Number.isFinite(t) && t > 0 ? Math.floor(t) : 0 });
+  }
+  // 补齐缺失属性到末尾（target=0）
+  for (const k of STAT_KEYS) if (!seen.has(k)) out.push({ stat: k, target: 0 });
+  return out;
+}
+
+// 纯函数：按优先级生成加点 body。
+// statsTotal: 当前各属性「总点数」（含加成）{strength,intelligence,luck,endurance}；
+// unspent:    待分配点数；priority: normalizeStatPriority 结果；enduranceReserve: 耐力预留（从可用点扣除）。
+// 规则：按顺序逐项补到 target（target=0 视为不限），溢出流入下一项；
+//       若所有项都达标仍有剩余，全加「最后一项」（兜底收口）。
+function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve) {
+  const body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
+  let remain = Math.max(0, unspent | 0);
+  const reserve = Math.min(Math.max(0, enduranceReserve | 0), remain);
+  remain -= reserve;
+  const list = normalizeStatPriority(priority);
+  const cur = (k) => {
+    const v = Number(statsTotal && statsTotal[k]);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  const order = [];
+  for (const it of list) {
+    if (remain <= 0) break;
+    if (!it.target) { // 不限项：吃剩余（后面项自然没钱）
+      body[it.stat] += remain;
+      order.push({ stat: it.stat, added: remain });
+      remain = 0;
+      break;
+    }
+    const need = Math.max(0, it.target - cur(it.stat));
+    if (need <= 0) continue;
+    const give = Math.min(need, remain);
+    body[it.stat] += give;
+    order.push({ stat: it.stat, added: give });
+    remain -= give;
+  }
+  // 所有项都达标仍有剩余 → 全加最后一项
+  if (remain > 0 && list.length) {
+    const last = list[list.length - 1].stat;
+    body[last] += remain;
+    const hit = order.find((o) => o.stat === last);
+    if (hit) hit.added += remain; else order.push({ stat: last, added: remain });
+    remain = 0;
+  }
+  return { body, order, enduranceReserve: reserve };
+}
+
 async function autoAllocate(unspent) {
   m.lastAllocateResult = { at: Date.now() };
   if (!m.autoAllocate) { m.lastAllocateResult.reason = 'disabled'; return; }
@@ -705,45 +763,49 @@ async function autoAllocate(unspent) {
   allocateInProgress = true;
   m.lastAllocateResult = { at: Date.now(), reason: 'allocating' };
   try {
-    // 比赛进行中：所有待分配点全加运气（运气影响爆率/保底），覆盖手动设定的 statTarget
-    const target = (m.compActive && m.allocStrategy === 'competition') ? 'luck' : m.statTarget;
-    const secondary = m.allocSecondary;
-    let body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
-    let addedSecondary = 0;
-
-    // 主属性总计阈值：主属性达阈值后，剩余点分给副属性（target 与 secondary 相同则全加主属性）
-    const usePrimaryThreshold = !!(m.primaryTotalTarget > 0) && secondary && secondary !== target;
-    if (usePrimaryThreshold) {
-      // 读当前「总属性」必须成功且为有效数字；读失败绝不能当作 curTotal=0
-      // （否则 needToReach=目标值，会把整批新点误加到主属性上，即使实际早已达标）。
-      let curTotal = null;
-      try {
-        const st = await ReelaxApi.playerStats();
-        if (st && st.ok && st.player && st.player.stats && st.player.stats.total) {
-          const raw = st.player.stats.total[target];
-          const num = Number(raw);
-          if (raw !== undefined && raw !== null && Number.isFinite(num)) curTotal = num;
-        }
-      } catch (_e) { /* 读取失败：curTotal 保持 null，下方按「未知」保守处理 */ }
-      let toPrimary, toSecondary;
-      if (curTotal === null) {
-        // 无法确认主属性是否达标 → 保守全加副属性，避免误加主属性（可等下次巡检重试）
-        toPrimary = 0;
-        toSecondary = unspent;
-        console.warn('[monitor] 自动加点: 读取当前总属性失败，本次全部加副属性 ' + secondary + '（避免误加主属性 ' + target + '）');
+    // 比赛进行中：所有待分配点全加运气（运气影响爆率/保底），覆盖优先级方案
+    if (m.compActive && m.allocStrategy === 'competition') {
+      const body = { strength: 0, intelligence: 0, luck: unspent, endurance: 0 };
+      const res = await ReelaxApi.allocateStats(body);
+      if (res && res.ok) {
+        try {
+          const data = JSON.parse(res.body);
+          if (data.player && data.player.unspentStatPoints !== undefined && m.sync) {
+            m.sync.unspentStatPoints = data.player.unspentStatPoints;
+          }
+        } catch (_) {}
+        m.lastAllocateResult = { ok: true, status: res.status, added: unspent, at: Date.now() };
+        console.log(`[monitor] 自动加点完成: 比赛全加运气 +${unspent}`);
       } else {
-        const needToReach = m.primaryTotalTarget - curTotal;
-        toPrimary = Math.max(0, Math.min(needToReach, unspent));
-        toSecondary = unspent - toPrimary;
+        m.lastAllocateResult = {
+          ok: false, reason: (res && res.error) || 'http', status: res ? res.status : null,
+          errorBody: (res && res.body) || (res && res.error) || '', at: Date.now(),
+        };
+        console.warn(`[monitor] 自动加点失败: ${m.lastAllocateResult.reason} ${m.lastAllocateResult.errorBody}`);
       }
-      body[target] = toPrimary;
-      if (toSecondary > 0) {
-        body[secondary] = toSecondary;
-        addedSecondary = toSecondary;
-      }
-    } else {
-      body[target] = unspent;
+      return;
     }
+
+    // 读当前「总点数」生成优先级方案。读失败 → 保守全加优先级第一项（可等下次巡检重试）。
+    let statsTotal = null;
+    try {
+      const st = await ReelaxApi.playerStats();
+      if (st && st.ok && st.player && st.player.stats && st.player.stats.total) {
+        statsTotal = st.player.stats.total;
+      }
+    } catch (_e) { /* 保持 null */ }
+    let plan;
+    if (statsTotal) {
+      plan = planPriorityAllocation(statsTotal, unspent, m.statPriority, m.enduranceBase);
+    } else {
+      const first = (m.statPriority && m.statPriority[0] && m.statPriority[0].stat) || 'luck';
+      const body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
+      body[first] = unspent;
+      plan = { body, order: [{ stat: first, added: unspent }], enduranceReserve: 0 };
+      console.warn('[monitor] 自动加点: 读取当前总属性失败，本次全加优先级第一项 ' + first);
+    }
+    const body = plan.body;
+    const totalAdded = STAT_KEYS.reduce((s, k) => s + (body[k] || 0), 0);
 
     const res = await ReelaxApi.allocateStats(body);
     if (res && res.ok) {
@@ -753,10 +815,12 @@ async function autoAllocate(unspent) {
           if (m.sync) m.sync.unspentStatPoints = data.player.unspentStatPoints;
         }
       } catch (_) {}
-      const label = STAT_LABELS[target] || target;
-      const secLabel = addedSecondary > 0 ? ('，副属性 +' + addedSecondary + ' ' + (STAT_LABELS[secondary] || secondary)) : '';
-      m.lastAllocateResult = { ok: true, status: res.status, added: unspent, addedSecondary, at: Date.now() };
-      console.log(`[monitor] 自动加点完成: 主属性 +${unspent - addedSecondary} ${label}${secLabel}`);
+      const desc = plan.order
+        .filter((o) => o.added > 0)
+        .map((o) => `${STAT_LABELS[o.stat] || o.stat}+${o.added}`)
+        .join(' ');
+      m.lastAllocateResult = { ok: true, status: res.status, added: totalAdded, order: plan.order, at: Date.now() };
+      console.log(`[monitor] 自动加点完成: ${desc || '无'}`);
     } else {
       m.lastAllocateResult = {
         ok: false,
@@ -778,9 +842,8 @@ async function autoAllocate(unspent) {
 // ---------- 比赛加点（competition respec） ----------
 // 思路复用 user.js（奥术摸鱼大师辅助）：
 //   · 比赛期间：洗点后全加运气（运气影响爆率/保底）
-//   · 比赛结束：洗点 → 读 stats.total 当已有加成(flatBonus)
-//     → 计算需补多少 base 力量，使"总力量"达到 strengthTarget
-//     → 剩余点数全给 allocSecondary（默认智力）
+//   · 比赛结束：洗点 → 读各属性总点数（postResetTotal）
+//     → 按多级优先级 statPriority 逐项补到 target（总点数口径），剩余点流入下一项
 const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
 const COMP_CHECK_MS = 30000;        // 比赛状态轮询周期
 let compCheckTimer = null;
@@ -794,36 +857,27 @@ const COMP_END_MAX_RETRY = 5;         // 最大尝试次数（含首次）
 const COMP_END_BASE_MS = 30000;       // 首次后等 30s，此后每次 ×2（30s/60s/120s/240s）
 let _compEndRetry = {};               // kind → { active, attempts, timer } 进行中的退避重试任务
 
-// —— 纯函数：赛后加点方案（popup 侧也有一份副本用于预览）——
-// opts: { totalPoints, flatBonusStrength, strengthTarget, multiplier, enduranceBase, secondary }
-//   flatBonusStrength: 洗点后 stats.total.strength（base=0，即所有加成之和）
-//   multiplier:        力量加成倍率（遗物 +10%/+25% → 1.1/1.25；无则 1）
-// 返回 base 分配方案 + 关键中间量，便于 UI 展示
+// —— 纯函数：赛后加点方案（按多级优先级洗回）——
+// opts: { totalPoints, postResetTotal, priority, enduranceBase }
+//   totalPoints:    洗点后可用总点数（unspent）
+//   postResetTotal: 洗点后各属性「总点数」（含加成）{strength,intelligence,luck,endurance}；
+//                   缺失项按 0 处理（洗点后 base=0，仅剩各类加成）。
+//   priority:       normalizeStatPriority 结果
+//   enduranceBase:  耐力预留（从可用点扣除，不实际分配）
+// 返回 body + 明细，shape 尽量兼容旧字段（needStrength 等）以免 popup 预览塌陷。
 function computeStatPlan(opts) {
   const totalPoints = Math.max(0, opts.totalPoints | 0);
-  const flatBonus = Math.max(0, opts.flatBonusStrength || 0);
-  const target = Math.max(0, opts.strengthTarget || 0);
-  const mult = (opts.multiplier > 0) ? opts.multiplier : 1;
-  // 总点先扣耐力预留（如 4596−100=4496 参与力量/运气分配），点数不足时耐力不超发
-  const endurance = Math.min(Math.max(0, opts.enduranceBase | 0), totalPoints);
-  const secondary = STAT_KEYS.includes(opts.secondary) ? opts.secondary : 'luck';
-  // 需补 base 力量 = (目标总力量 - 已有加成) / 倍率（向下取整，绝不超目标，避免图腾等加成造成越界）
-  const needRaw = Math.floor((target - flatBonus) / mult);
-  const needStrength = Math.max(0, Math.min(needRaw, totalPoints - endurance));
-  const remain = Math.max(0, totalPoints - needStrength - endurance);
-  const body = { strength: needStrength, intelligence: 0, luck: 0, endurance: 0 };
-  if (remain > 0) body[secondary] = remain;
+  const postReset = opts.postResetTotal || {};
+  const plan = planPriorityAllocation(postReset, totalPoints, opts.priority, opts.enduranceBase);
+  const body = plan.body;
   return {
     body,
-    needStrength,
-    secondaryPoints: remain > 0 ? remain : 0,
-    flatBonusStrength: flatBonus,
-    strengthTarget: target,
-    reachedStrength: flatBonus + needStrength * mult,
-    capped: needRaw > needStrength, // 点数不足以达成目标总力量
-    multiplierUsed: mult,
-    endurance,
-    secondary,
+    order: plan.order,
+    needStrength: body.strength || 0,
+    secondaryPoints: totalPoints - (body.strength || 0),
+    endurance: plan.enduranceReserve,
+    totalPoints,
+    priority: normalizeStatPriority(opts.priority),
   };
 }
 
@@ -969,7 +1023,7 @@ async function executeCompStart() {
   }
 }
 
-// 比赛结束：洗点 → 读加成 → 力量补到 strengthTarget，剩余给 allocSecondary
+// 比赛结束：洗点 → 读洗点后总属性 → 按多级优先级把点洗回
 async function executeCompEnd() {
   if (respecInProgress) return { ok: false, reason: 'locked' };
   respecInProgress = true;
@@ -988,56 +1042,30 @@ async function executeCompEnd() {
       : (ReelaxApi.safeParseJSON(resetR.body) || {}).player || null;
     if (!after) { m.lastRespecResult = { ok: false, reason: 'reset-parse-failed', body: resetR.body, at: Date.now() }; return m.lastRespecResult; }
     const totalPts = after.unspentStatPoints != null ? after.unspentStatPoints : (pre.player.unspentStatPoints || 0);
-    const baseStr = pre.player.stats?.base?.strength || 0;
-    const totalStr = pre.player.stats?.total?.strength || 0;
-    // 纯加成 flatBonus：用「洗点前 total − base」（两者同刻、加成完整加载）。
-    // 不要用洗点后 total.strength —— reset 后 guild/图腾等加成可能瞬时未同步，读到偏低
-    // → 多分配 → 赛后超目标（实测 4500→4580/→4578，缺的加成数即超量）。
-    // 力量实测为纯加法 total = base + flat（图腾/遗物%不作用于 base），故 total−base = flat。
-    const flatBonus = baseStr > 0
-      ? (totalStr - baseStr)
-      : ((after.stats?.total?.strength != null) ? after.stats.total.strength : (totalStr || 0));
-    // 倍率：实测游戏力量按「total = base + flat」纯加法，分配 base 点 1:1 计入 total，mult 恒为 1。
-    const mult = 1;
+    // 洗点后各属性总点数：优先用洗点后实读的 stats.total（含残留加成）；
+    // 读不到则回退「洗点前 total − base」（同刻加成完整，避开 reset 后瞬时未同步问题）。
+    const postResetTotal = {};
+    for (const k of STAT_KEYS) {
+      const t = after.stats?.total?.[k];
+      if (t != null && Number.isFinite(Number(t))) {
+        postResetTotal[k] = Number(t);
+      } else {
+        const preTotal = pre.player.stats?.total?.[k] || 0;
+        const preBase = pre.player.stats?.base?.[k] || 0;
+        postResetTotal[k] = Math.max(0, preTotal - preBase);
+      }
+    }
     const plan = computeStatPlan({
       totalPoints: totalPts,
-      flatBonusStrength: flatBonus,
-      strengthTarget: m.strengthTarget,
-      multiplier: mult,
+      postResetTotal,
+      priority: m.statPriority,
       enduranceBase: m.enduranceBase,
-      secondary: m.allocSecondary,
     });
     const allocR = await ReelaxApi.allocateStats(plan.body);
-    let ok = !!(allocR && allocR.ok);
-    let finalTotal = null;
-    // 二次校准：mult=1 时 total=flat+base，flatBonus 读取若有微小漂移（pre/after 状态差），
-    // 一次分配会差 1~n 点（实测 4498 vs 4500 差 2）。分配后重读，若仍低于目标、且有余点，
-    // 补足差额到恰好 target（不越界）。
-    try {
-      const chk = await ReelaxApi.playerStats();
-      const ts = chk.player?.stats?.total?.strength;
-      if (ts != null) {
-        finalTotal = ts;
-        if (ts < m.strengthTarget) {
-          const need = m.strengthTarget - ts;
-          const unspent = chk.player?.unspentStatPoints ?? 0;
-          if (unspent >= need) {
-            await ReelaxApi.allocateStats({ strength: need, intelligence: 0, luck: 0, endurance: 0 });
-            // 补点后再确认一次最终值
-            const chk2 = await ReelaxApi.playerStats();
-            if (chk2.player?.stats?.total?.strength != null) finalTotal = chk2.player.stats.total.strength;
-          }
-        }
-      }
-    } catch (_e) { /* 二次校准失败则保留一次分配结果 */ }
-    // ok = 已达到目标总力量（或首次分配已成功且无法补足时按已覆盖处理）
-    if (finalTotal != null) ok = finalTotal >= m.strengthTarget - 0.5;
+    const ok = !!(allocR && allocR.ok);
     m.lastRespecResult = {
-      ok, phase: 'end', at: Date.now(), plan, body: plan.body, secondary: plan.secondary,
-      totalPoints: totalPts, flatBonusStrength: flatBonus, multiplier: mult,
-      // 记录本次洗点后实际读到的纯加成细分，便于核对 flatBonus 是否漏算某加成（曾致超目标）
-      flatDetail: (after.stats && after.stats.total) ? after.stats.total : null,
-      afterBase: after.stats?.base || null,
+      ok, phase: 'end', at: Date.now(), plan, body: plan.body, order: plan.order,
+      totalPoints: totalPts, postResetTotal,
     };
     return m.lastRespecResult;
   } catch (e) {
@@ -1181,7 +1209,7 @@ function startCompetitionCheck() {
 //   · 记录「全加运气状态」的硬保底杆数作基准 ref（首次未记录→自动建基；后每当正处全运气自动刷新，持久化）。
 //   · 非全运气时该类型 currentDry ≥ ref 硬保底 → 洗点 → 全点运气，直到「对应鱼出货」才洗回。
 //   · 两开关任一在等就保持全运气；只剩最后的那个时等它出；全部对应的鱼都出货后才洗回。
-//   · 洗回复用比赛后加点方案 computeStatPlan：力量补到 strengthTarget，剩余给 allocSecondary。
+//   · 洗回复用比赛后加点方案 computeStatPlan：按 statPriority 多级优先级洗回。
 //   · 可叠加 pityTriggerSurgeOnly（仅涌流触发）：开启后只在奥秘涌流(surge)期间跑，涌流结束视为功能关、洗回。
 //   · 比赛中（m.compActive）此功能整体冻结；比赛洗点时先 pityTriggerRelease 让位，比赛结束再评估。
 //   · active 期间抑制内置自动加点 autoAllocate，防止点到别的属性。
@@ -1386,13 +1414,21 @@ async function pityTriggerRestore() {
     const fresh = await ReelaxApi.playerStats();
     const player = (fresh && fresh.ok && fresh.player) ? fresh.player : (ReelaxApi.safeParseJSON(resetR.body) || {}).player;
     const totalPts = player && player.unspentStatPoints != null ? player.unspentStatPoints : (pre.player.unspentStatPoints || 0);
+    // 洗点后各属性总点数（口径同 executeCompEnd）：优先洗点后实读 total，否则回退 pre total−base
+    const postResetTotal = {};
+    for (const k of STAT_KEYS) {
+      const t = player?.stats?.total?.[k];
+      if (t != null && Number.isFinite(Number(t))) {
+        postResetTotal[k] = Number(t);
+      } else {
+        postResetTotal[k] = Math.max(0, (pre.player.stats?.total?.[k] || 0) - (pre.player.stats?.base?.[k] || 0));
+      }
+    }
     const plan = computeStatPlan({
       totalPoints: totalPts,
-      flatBonusStrength: m.pityTrigger.savedFlatBonus != null ? m.pityTrigger.savedFlatBonus : 0,
-      strengthTarget: m.strengthTarget,
-      multiplier: 1,
+      postResetTotal,
+      priority: m.statPriority,
       enduranceBase: m.enduranceBase,
-      secondary: m.allocSecondary,
     });
     const allocR = await ReelaxApi.allocateStats(plan.body);
     const ok = !!(allocR && allocR.ok);
@@ -3499,7 +3535,7 @@ async function autoWorldBossRespecTick(w) {
   const bossOver = !w.inWindow || (st.escapeAt && now > st.escapeAt);
   if (st.washed && bossOver && !st.restoring) {
     st.restoring = true;
-    const r = await executeCompEnd(); // 复原为原方案（力量补 strengthTarget，剩余给 allocSecondary）
+    const r = await executeCompEnd(); // 复原为原方案（按 statPriority 多级优先级洗回）
     st.restoring = false;
     const restored = !!(r && r.ok);
     console.log('[monitor] 世界Boss全洗弱点 复原' + (restored ? '完成' : '失败: ' + ((r && r.reason) || 'unknown')) + ' → executeCompEnd');

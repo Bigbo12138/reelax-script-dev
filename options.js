@@ -42,9 +42,12 @@ const DEFAULTS = {
   feishuReceiveId: '',         // 接收人标识（如 open_id）
   autoAllocate: true,
   autoMastery: false,
-  statTarget: 'luck',
-  allocSecondary: 'luck',
-  primaryTotalTarget: 0,
+  statPriority: [
+    { stat: 'luck', target: 0 },
+    { stat: 'intelligence', target: 0 },
+    { stat: 'strength', target: 0 },
+    { stat: 'endurance', target: 0 },
+  ],
   pityMonitor: true,
   pityCheckSec: 300,
   pityHardMargin: 1000,
@@ -81,6 +84,72 @@ fishAutoSell: true,
 };
 
 const $ = (id) => document.getElementById(id);
+
+// ---------- 多级优先级加点 ----------
+const STAT_ORDER_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
+const STAT_CN_MAP = { strength: '力量', intelligence: '智力', luck: '运气', endurance: '耐力' };
+let _statPriority = null; // 页面内编辑态：数组，顺序即优先级
+
+function normalizeStatPriority(raw) {
+  const blank = () => STAT_ORDER_KEYS.map((k) => ({ stat: k, target: 0 }));
+  if (!Array.isArray(raw) || !raw.length) return blank();
+  const seen = new Set();
+  const out = [];
+  for (const it of raw) {
+    if (!it || !STAT_ORDER_KEYS.includes(it.stat) || seen.has(it.stat)) continue;
+    seen.add(it.stat);
+    const t = Number(it.target);
+    out.push({ stat: it.stat, target: Number.isFinite(t) && t > 0 ? Math.floor(t) : 0 });
+  }
+  for (const k of STAT_ORDER_KEYS) if (!seen.has(k)) out.push({ stat: k, target: 0 });
+  return out;
+}
+
+function renderStatPriority(raw) {
+  _statPriority = normalizeStatPriority(raw);
+  const box = $('statPriorityList');
+  if (!box) return;
+  box.innerHTML = _statPriority.map((p, i) => {
+    const n = _statPriority.length;
+    const disabledUp = i === 0 ? 'disabled' : '';
+    const disabledDown = i === n - 1 ? 'disabled' : '';
+    return `<div style="display:flex;align-items:center;gap:6px;">
+      <span style="width:22px;color:#888;text-align:right;">${i + 1}.</span>
+      <span style="width:42px;font-weight:600;">${STAT_CN_MAP[p.stat] || p.stat}</span>
+      <input type="number" min="0" step="100" data-sp-idx="${i}" value="${p.target}" placeholder="目标总点数(0=余)" style="width:150px;" />
+      <button type="button" class="secondary" data-sp-up="${i}" ${disabledUp} style="margin:0;padding:2px 8px;">▲</button>
+      <button type="button" class="secondary" data-sp-down="${i}" ${disabledDown} style="margin:0;padding:2px 8px;">▼</button>
+    </div>`;
+  }).join('');
+  // 数字输入：同步到编辑态
+  box.querySelectorAll('input[data-sp-idx]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const i = Number(inp.dataset.spIdx);
+      const v = Number(inp.value);
+      _statPriority[i].target = Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+      inp.value = _statPriority[i].target;
+    });
+  });
+  box.querySelectorAll('button[data-sp-up]').forEach((btn) => {
+    btn.addEventListener('click', () => moveStatPriority(Number(btn.dataset.spUp), -1));
+  });
+  box.querySelectorAll('button[data-sp-down]').forEach((btn) => {
+    btn.addEventListener('click', () => moveStatPriority(Number(btn.dataset.spDown), 1));
+  });
+}
+
+function moveStatPriority(idx, dir) {
+  const list = _statPriority || [];
+  const j = idx + dir;
+  if (j < 0 || j >= list.length) return;
+  const tmp = list[idx]; list[idx] = list[j]; list[j] = tmp;
+  renderStatPriority(list);
+}
+
+function readStatPriority() {
+  return normalizeStatPriority(_statPriority);
+}
+
 
 function renderScriptList(enabledSet, mandatorySet) {
   const container = $('scriptList');
@@ -122,9 +191,7 @@ async function load() {
   $('feishuReceiveId').value = cfg.feishuReceiveId || '';
   $('autoAllocate').checked = cfg.autoAllocate !== false;
   $('autoMastery').checked = cfg.autoMastery !== false;
-  $('statTarget').value = cfg.statTarget || 'luck';
-  $('allocSecondary').value = cfg.allocSecondary || 'luck';
-  $('primaryTotalTarget').value = cfg.primaryTotalTarget != null ? cfg.primaryTotalTarget : 0;
+  renderStatPriority(cfg.statPriority);
   $('pityMonitor').checked = cfg.pityMonitor !== false;
   $('pityCheckSec').value = cfg.pityCheckSec != null ? cfg.pityCheckSec : 300;
   $('pityHardMargin').value = cfg.pityHardMargin != null ? cfg.pityHardMargin : 1000;
@@ -223,9 +290,7 @@ function save() {
     feishuReceiveId: $('feishuReceiveId').value.trim(),
     autoAllocate: $('autoAllocate').checked,
     autoMastery: $('autoMastery').checked,
-    statTarget: $('statTarget').value,
-    allocSecondary: $('allocSecondary').value,
-    primaryTotalTarget: Number($('primaryTotalTarget').value) >= 0 ? Number($('primaryTotalTarget').value) : 0,
+    statPriority: readStatPriority(),
     pityMonitor: $('pityMonitor').checked,
     pityCheckSec: Number($('pityCheckSec').value) || 300,
     pityHardMargin: Number($('pityHardMargin').value) >= 0 ? Number($('pityHardMargin').value) : 1000,

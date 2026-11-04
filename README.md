@@ -2,7 +2,7 @@
 
 浏览器启动时自动打开 [reelax.cn](https://reelax.cn/)，并向该站点注入可配置的 JS 脚本（等价油猴 `@grant none`，可直接读 `window.arcaneReelax`）。**Chrome/Edge Manifest V3** 版本：后台为单一 Service Worker，`browser.*` 经 `chrome-polyfill.js` 桥接为 `chrome.*`。
 
-> 当前版本 **v1.14.9** · 更新记录见 [`CHANGELOG.md`](./CHANGELOG.md) · 进阶开发与运维说明见 [`SKILL.md`](./SKILL.md) · GitBook 风格使用文档见 [Wiki](https://github.com/Bigbo12138/reelax-script-dev/wiki)
+> 当前版本 **v2.0.0** · 更新记录见 [`CHANGELOG.md`](./CHANGELOG.md) · 进阶开发与运维说明见 [`SKILL.md`](./SKILL.md) · GitBook 风格使用文档见 [Wiki](https://github.com/Bigbo12138/reelax-script-dev/wiki)
 
 下载安装包：[Releases](https://github.com/Bigbo12138/reelax-script-dev/releases)（每次打 `v*` tag 由 GitHub Actions 自动构建 zip）
 
@@ -37,7 +37,7 @@
 | **自动换饵** | 按收益切换最优饵；顶级饵策略可配 |
 | **每日签到** | 优先官方 API，DOM 兜底 |
 | **自动出售库存** | 定时切库存页出售鱼与低品级装备（品级多选、保留上限、可通知） |
-| **自动加点 / 加专精** | 检测 `unspentStatPoints > 0` 自动全加（目标属性可配，支持「主属性达阈值后转副属性」）；每 10 分钟把当前图专精点全投 |
+| **自动加点 / 加专精** | 检测 `unspentStatPoints > 0` 自动加点（多级优先级：逐项补到目标总点数，溢出流入下一项）；每 10 分钟把当前图专精点全投 |
 | **保底监控** | 定时签名查 `/api/statistics` 的 pity 字段（奥秘/奇异出货、软保底满、逼近硬保底）；`pity-trigger` 可在奥秘涌流窗口记录「全加运气」硬保底基准，满保底自动洗点全加运气 |
 | **自动开公会增益** | 由「优选地图」通知驱动，按赛程/天气剩余时长折算份数，防多开 |
 | **自动献祭** | 按资源（遗物/鱼/金币）各自的**门槛百分比**自动捐献；门槛设为 `0` 表示该资源完全不参与 |
@@ -123,10 +123,20 @@
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `autoAllocate` | `true` | 自动加点总开关 |
-| `statTarget` | `luck` | 目标属性（`strength`/`intelligence`/`luck`/`endurance`） |
-| `primaryTotalTarget` | `0` | 主属性总属性阈值，达标后剩余点转副属性（0 = 不启用） |
-| `allocSecondary` | `luck` | 副属性 |
+| `statPriority` | 见下 | 多级优先级加点：有序数组 `[{stat, target}, ...]` |
 | `autoMastery` | `false` | 定时把当前图专精点全投 |
+
+`statPriority` 默认值（`运气 → 智力 → 力量 → 耐力`，各项 `target: 0`）：
+
+```json
+[{"stat":"luck","target":0},{"stat":"intelligence","target":0},
+ {"stat":"strength","target":0},{"stat":"endurance","target":0}]
+```
+
+- `target` 为该属性**总点数**（含遗物/图腾等加成），按数组顺序逐项补足，溢出流入下一项。
+- `target = 0` 表示不限、吃掉当前剩余点；全部项都有目标且仍有余点则全加最后一项。
+- 设置页可直接拖动排序、逐项改目标；弹窗展示当前优先级与赛后预览。
+- **v2.0.0 起 `statTarget` / `primaryTotalTarget` / `allocSecondary` / `strengthTarget` 已移除**，升级后需重新配置优先级。
 
 ### 保底 / 洗点
 
