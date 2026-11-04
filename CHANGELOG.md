@@ -4,6 +4,15 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.1.0] - 2026-11-04
+
+### 优化：加点目标按「游戏面板预测」精确反推投入点数
+- `monitor.js`（新增 `statPanelAtInvestment` / `requiredStatInvestment` / `currentStatInvestment` / `buildPostResetStats`）：逐行移植独立版的面板预测模型 —— `floor((系统基准 + 玩家投入 + 竿/装/勋章/公会奖杯固定 + 遗物固定 + 天赋平添) × (1 + 公会% + 遗物基点/10000))`。公会百分比按当前 eligible 池反推取整、遗物每级 5 个基点并按残差修正，天赋贡献用二分反推等效平添点，验算结果与线上 `total` 一致。
+- `monitor.js`（`planPriorityAllocation` 新增 `stats` 参数）：有完整 stats 时改用「投影 stats 迭代逼近」——每轮按当前投影池反推 `target − 已有投入` 的差额并计入投影 base，最多 64 轮，解决百分比基数随投入增大而变化导致一次线性反推欠投的问题；无 stats 时仍走原「目标总点 − 当前总点」粗略差。
+- `monitor.js`（`autoAllocate` / `executeCompEnd` / `pityTriggerRestore` / `reelax-stat-plan`）：改为读取完整 `player.stats`（`base`/遗物/公会/转生等），并在洗点后用 `buildPostResetStats()` 构造「base 归零、加成保留」的零投入面板，再传给加点方案计算，使「目标总点数」口径在洗点前后一致。
+- `popup.js`：删除本地重复实现的 `planPriorityAllocation` / `computeStatPlan`，预览改为直接使用后台（monitor）通过 `reelax-stat-plan` 代算的 `plan`，避免两处逻辑漂移。
+- 行为不变项：优先级顺序、`target=0` 吃剩余、全部达标全加最后一项、耐力预留、比赛期间全加运气等规则均保持原样。
+
 ## [v2.0.0] - 2026-11-01
 
 ### 破坏性变更：加点系统改为「多级优先级」模型

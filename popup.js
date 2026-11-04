@@ -5,11 +5,13 @@ const DEFAULTS = {
 
 function el(id) { return document.getElementById(id); }
 
-// ---------- 比赛加点逻辑（与 monitor.js 的 computeStatPlan 保持一致，供 popup 预览）----------
+// ---------- 比赛加点预览：由后台 monitor 通过 reelax-stat-plan 消息代算 plan，此处不再重复实现 ----------
+const STAT_CN = { strength: '力量', intelligence: '智力', luck: '运气', endurance: '耐力' };
+
+// 归一化优先级（仅 popup 摘要展示用；实际加点方案由 monitor 计算）
 function normalizeStatPriority(raw) {
   const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
-  const blank = () => STAT_KEYS.map((k) => ({ stat: k, target: 0 }));
-  if (!Array.isArray(raw) || !raw.length) return blank();
+  if (!Array.isArray(raw) || !raw.length) return STAT_KEYS.map((k) => ({ stat: k, target: 0 }));
   const seen = new Set();
   const out = [];
   for (const it of raw) {
@@ -21,39 +23,7 @@ function normalizeStatPriority(raw) {
   for (const k of STAT_KEYS) if (!seen.has(k)) out.push({ stat: k, target: 0 });
   return out;
 }
-function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve) {
-  const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
-  const body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
-  let remain = Math.max(0, unspent | 0);
-  const reserve = Math.min(Math.max(0, enduranceReserve | 0), remain);
-  remain -= reserve;
-  const list = normalizeStatPriority(priority);
-  const cur = (k) => { const v = Number(statsTotal && statsTotal[k]); return Number.isFinite(v) && v > 0 ? v : 0; };
-  const order = [];
-  for (const it of list) {
-    if (remain <= 0) break;
-    if (!it.target) { body[it.stat] += remain; order.push({ stat: it.stat, added: remain }); remain = 0; break; }
-    const need = Math.max(0, it.target - cur(it.stat));
-    if (need <= 0) continue;
-    const give = Math.min(need, remain);
-    body[it.stat] += give; order.push({ stat: it.stat, added: give }); remain -= give;
-  }
-  if (remain > 0 && list.length) {
-    const last = list[list.length - 1].stat;
-    body[last] += remain;
-    const hit = order.find((o) => o.stat === last);
-    if (hit) hit.added += remain; else order.push({ stat: last, added: remain });
-    remain = 0;
-  }
-  return { body, order, enduranceReserve: reserve };
-}
-// opts: { totalPoints, postResetTotal, priority, enduranceBase }
-function computeStatPlan(opts) {
-  const totalPoints = Math.max(0, (opts.totalPoints | 0));
-  const plan = planPriorityAllocation(opts.postResetTotal || {}, totalPoints, opts.priority, opts.enduranceBase);
-  return { body: plan.body, order: plan.order, endurance: plan.enduranceReserve, totalPoints, priority: normalizeStatPriority(opts.priority) };
-}
-const STAT_CN = { strength: '力量', intelligence: '智力', luck: '运气', endurance: '耐力' };
+
 
 // 比赛加点面板渲染
 function renderAlloc() {

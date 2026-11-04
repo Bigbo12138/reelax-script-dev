@@ -490,11 +490,13 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       for (const k of STAT_KEYS) {
         postResetTotal[k] = Math.max(0, (pre.player.stats?.total?.[k] || 0) - (pre.player.stats?.base?.[k] || 0));
       }
+      const postStats = buildPostResetStats(pre.player.stats);
       const plan = computeStatPlan({
         totalPoints: totalPts,
         postResetTotal,
         priority: m.statPriority,
         enduranceBase: m.enduranceBase,
+        stats: postStats,
       });
       sendResponse({
         ok: true,
@@ -709,12 +711,98 @@ function normalizeStatPriority(raw) {
   return out;
 }
 
+// —— 属性面板预测（逐行移植自独立版 L7468-7690，验算与线上 total 完全一致）——
+// 游戏面板 = floor((系统基准 + 玩家投入 + 装备固定 + 遗物固定 + 天赋平添) × (1 + 公会% + 遗物等级%))
+// 其中公会% 取整、遗物每级 5 个基点，正向建模；反推「要达标需投入几点」用二分。
+// stats 形如 /api/player/stats 的 player.stats：{base, rod, gear, medals, guildTrophies,
+//   artifacts, artifactPercentage, guild, reincarnation, total}。
+function currentStatInvestment(stat, stats) {
+  const base = stats?.base || {};
+  return stat === 'endurance' ? Math.max(0, (base.endurance || 0) - 100) : Math.max(0, base[stat] || 0);
+}
+
+function statPanelAtInvestment(stat, invested, stats, useObservedMinimum) {
+  const systemBase = stat === 'endurance' ? 100 : 0;
+  const currentInvestment = Math.max(0, Math.floor((Number(stats?.base?.[stat]) || 0) - systemBase));
+  const targetInvestment = Math.max(0, Math.floor(invested || 0));
+  const fixed = ['rod', 'gear', 'medals', 'guildTrophies'].reduce(
+    (sum, source) => sum + Math.max(0, Number(stats?.[source]?.[stat]) || 0), 0);
+  const artifactFlat = Math.max(0, Number(stats?.artifacts?.[stat]) || 0);
+  const currentEligible = systemBase + currentInvestment + fixed + artifactFlat;
+  const targetEligible = systemBase + targetInvestment + fixed + artifactFlat;
+  const artifactBonus = Math.max(0, Number(stats?.artifactPercentage?.[stat]) || 0);
+  const guildBonus = Math.max(0, Number(stats?.guild?.[stat]) || 0);
+  const currentTotal = Number(stats?.total?.[stat]);
+  if (!Number.isFinite(currentTotal)) return NaN;
+  const guildPercent = currentEligible > 0 ? Math.max(0, Math.round((guildBonus * 100) / currentEligible)) : 0;
+  // 遗物等级每级贡献 5 个基点；上报的遗物加成是合并百分比取整后的残差，不是单独取整。
+  const estimatedArtifact = currentEligible > 0 ? (artifactBonus * 10_000) / currentEligible : 0;
+  let artifactBasisPoints = Math.max(0, Math.round(estimatedArtifact / 5) * 5);
+  if (currentEligible > 0) {
+    const guildFloor = Math.floor((currentEligible * guildPercent) / 100);
+    const lower = Math.max(0, Math.ceil((((guildFloor + artifactBonus) * 10_000) / currentEligible - guildPercent * 100) / 5) * 5);
+    const upper = (guildFloor + artifactBonus + 1) * 10_000 / currentEligible - guildPercent * 100;
+    if (lower < upper && Math.floor((currentEligible * (guildPercent * 100 + lower)) / 10_000) - guildFloor === artifactBonus) {
+      artifactBasisPoints = Math.max(lower, Math.min(Math.ceil(upper / 5) * 5 - 5, artifactBasisPoints));
+    }
+  }
+  const multiplier = 10_000 + guildPercent * 100 + artifactBasisPoints;
+  const reincarnation = Math.max(0, Number(stats?.reincarnation?.[stat]) || 0);
+  // 天赋贡献 = 两次合并面板取整之差，用二分反推等效平添点。
+  const talentContribution = (flatTalent) =>
+    flatTalent +
+    Math.floor(((currentEligible + flatTalent) * (multiplier - 10_000)) / 10_000) -
+    Math.floor((currentEligible * (multiplier - 10_000)) / 10_000);
+  let low = 0, high = Math.floor(reincarnation);
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (talentContribution(mid) < reincarnation) low = mid + 1;
+    else high = mid;
+  }
+  const talentFlat = low;
+  const modeled = Math.floor(((targetEligible + talentFlat) * multiplier) / 10_000);
+  const actual = Number(stats?.total?.[stat]);
+  return useObservedMinimum && targetInvestment === 0 && currentInvestment === 0 && Number.isFinite(actual) ? actual : modeled;
+}
+
+function requiredStatInvestment(stat, panelTarget, stats) {
+  const target = Math.max(0, Math.floor(Number(panelTarget) || 0));
+  if (!(statPanelAtInvestment(stat, 0, stats) >= target)) {
+    let low = 0, high = Math.max(1, target);
+    while (statPanelAtInvestment(stat, high, stats) < target && high < 1e9) high *= 2;
+    while (low + 1 < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (statPanelAtInvestment(stat, mid, stats) >= target) high = mid;
+      else low = mid;
+    }
+    return high;
+  }
+  return 0;
+}
+
+// 构造「洗点后」的完整 stats（base 全归零、total=零投入面板），供面板模型反推洗点后所需投入点。
+// 洗点只清空玩家 base 投入，遗物/公会/竿/装/勋章/转生天赋等加成保留，故其余字段沿用 source。
+function buildPostResetStats(source) {
+  if (!source) return null;
+  const zeroBase = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
+  const out = Object.assign({}, source, { base: zeroBase });
+  const total = {};
+  for (const k of STAT_KEYS) {
+    // 洗点后 currentInvestment=0，statPanelAtInvestment 用 fixed+artifact+talent 建模零投入面板。
+    const v = statPanelAtInvestment(k, 0, Object.assign({}, source, { base: zeroBase }));
+    total[k] = Number.isFinite(v) ? v : Math.max(0, (source.total?.[k] || 0) - (source.base?.[k] || 0));
+  }
+  out.total = total;
+  return out;
+}
+
 // 纯函数：按优先级生成加点 body。
-// statsTotal: 当前各属性「总点数」（含加成）{strength,intelligence,luck,endurance}；
+// statsTotal: 当前各属性「总点数」（含加成）{strength,intelligence,luck,endurance}（无完整 stats 时退化用）；
+// stats:      完整 stats 对象（有则用面板预测反推「需投入点」，正确处理公会/遗物百分比加成）；
 // unspent:    待分配点数；priority: normalizeStatPriority 结果；enduranceReserve: 耐力预留（从可用点扣除）。
 // 规则：按顺序逐项补到 target（target=0 视为不限），溢出流入下一项；
 //       若所有项都达标仍有剩余，全加「最后一项」（兜底收口）。
-function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve) {
+function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve, stats) {
   const body = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
   let remain = Math.max(0, unspent | 0);
   const reserve = Math.min(Math.max(0, enduranceReserve | 0), remain);
@@ -724,28 +812,55 @@ function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve)
     const v = Number(statsTotal && statsTotal[k]);
     return Number.isFinite(v) && v > 0 ? v : 0;
   };
+  const useModel = !!(stats && stats.total);
+  // 面板模型的百分比基数会随投入增大而变化（公会%/遗物基点是按当前 eligible 池反推的），
+  // 一次线性反推会略微欠投。故用「投影 stats」迭代：每次给出后把投入记入投影 base，再按新池重解剩余。
+  const proj = useModel ? JSON.parse(JSON.stringify(stats)) : null;
+  if (proj) { proj.base = Object.assign({}, proj.base); }
   const order = [];
+  const record = (stat, added) => {
+    const hit = order.find((o) => o.stat === stat);
+    if (hit) hit.added += added; else order.push({ stat, added });
+  };
+  const fillModel = (stat, target) => {
+    // 迭代逼近：最多 64 轮，每轮按当前投影池反推还需投入多少，加剩余可用点，直至达标或用尽。
+    for (let guard = 0; guard < 64 && remain > 0; guard++) {
+      const req = requiredStatInvestment(stat, target, proj);
+      const have = currentStatInvestment(stat, proj);
+      const deficit = req - have;
+      if (deficit <= 0) return;
+      const give = Math.min(deficit, remain);
+      proj.base[stat] = (proj.base[stat] || 0) + give;
+      body[stat] += give;
+      record(stat, give);
+      remain -= give;
+      if (give < deficit) return; // 点数用尽
+    }
+  };
   for (const it of list) {
     if (remain <= 0) break;
     if (!it.target) { // 不限项：吃剩余（后面项自然没钱）
       body[it.stat] += remain;
-      order.push({ stat: it.stat, added: remain });
+      record(it.stat, remain);
       remain = 0;
       break;
     }
-    const need = Math.max(0, it.target - cur(it.stat));
-    if (need <= 0) continue;
-    const give = Math.min(need, remain);
-    body[it.stat] += give;
-    order.push({ stat: it.stat, added: give });
-    remain -= give;
+    if (useModel) {
+      fillModel(it.stat, it.target);
+    } else {
+      const need = Math.max(0, it.target - cur(it.stat));
+      if (need <= 0) continue;
+      const give = Math.min(need, remain);
+      body[it.stat] += give;
+      record(it.stat, give);
+      remain -= give;
+    }
   }
   // 所有项都达标仍有剩余 → 全加最后一项
   if (remain > 0 && list.length) {
     const last = list[list.length - 1].stat;
     body[last] += remain;
-    const hit = order.find((o) => o.stat === last);
-    if (hit) hit.added += remain; else order.push({ stat: last, added: remain });
+    record(last, remain);
     remain = 0;
   }
   return { body, order, enduranceReserve: reserve };
@@ -786,16 +901,21 @@ async function autoAllocate(unspent) {
       return;
     }
 
-    // 读当前「总点数」生成优先级方案。读失败 → 保守全加优先级第一项（可等下次巡检重试）。
+    // 读当前完整 stats（含 base/遗物/公会）生成优先级方案，用面板预测精确反推所需投入点。
+    // 读失败 → 保守全加优先级第一项（可等下次巡检重试）。
+    let statsObj = null;
     let statsTotal = null;
     try {
       const st = await ReelaxApi.playerStats();
-      if (st && st.ok && st.player && st.player.stats && st.player.stats.total) {
-        statsTotal = st.player.stats.total;
+      if (st && st.ok && st.player && st.player.stats) {
+        statsObj = st.player.stats;
+        statsTotal = st.player.stats.total || null;
       }
     } catch (_e) { /* 保持 null */ }
     let plan;
-    if (statsTotal) {
+    if (statsObj) {
+      plan = planPriorityAllocation(statsTotal, unspent, m.statPriority, m.enduranceBase, statsObj);
+    } else if (statsTotal) {
       plan = planPriorityAllocation(statsTotal, unspent, m.statPriority, m.enduranceBase);
     } else {
       const first = (m.statPriority && m.statPriority[0] && m.statPriority[0].stat) || 'luck';
@@ -858,17 +978,19 @@ const COMP_END_BASE_MS = 30000;       // 首次后等 30s，此后每次 ×2（3
 let _compEndRetry = {};               // kind → { active, attempts, timer } 进行中的退避重试任务
 
 // —— 纯函数：赛后加点方案（按多级优先级洗回）——
-// opts: { totalPoints, postResetTotal, priority, enduranceBase }
+// opts: { totalPoints, postResetTotal, priority, enduranceBase, stats }
 //   totalPoints:    洗点后可用总点数（unspent）
 //   postResetTotal: 洗点后各属性「总点数」（含加成）{strength,intelligence,luck,endurance}；
 //                   缺失项按 0 处理（洗点后 base=0，仅剩各类加成）。
 //   priority:       normalizeStatPriority 结果
 //   enduranceBase:  耐力预留（从可用点扣除，不实际分配）
+//   stats:          洗点后完整 stats 对象（含 base/遗物/公会等）。有则用面板预测精确反推所需投入点，
+//                   无则退化为「目标总点 − 当前总点」的粗略差。
 // 返回 body + 明细，shape 尽量兼容旧字段（needStrength 等）以免 popup 预览塌陷。
 function computeStatPlan(opts) {
   const totalPoints = Math.max(0, opts.totalPoints | 0);
   const postReset = opts.postResetTotal || {};
-  const plan = planPriorityAllocation(postReset, totalPoints, opts.priority, opts.enduranceBase);
+  const plan = planPriorityAllocation(postReset, totalPoints, opts.priority, opts.enduranceBase, opts.stats);
   const body = plan.body;
   return {
     body,
@@ -1055,11 +1177,15 @@ async function executeCompEnd() {
         postResetTotal[k] = Math.max(0, preTotal - preBase);
       }
     }
+    const postStats = (after.stats && after.stats.total)
+      ? after.stats
+      : buildPostResetStats(pre.player.stats);
     const plan = computeStatPlan({
       totalPoints: totalPts,
       postResetTotal,
       priority: m.statPriority,
       enduranceBase: m.enduranceBase,
+      stats: postStats,
     });
     const allocR = await ReelaxApi.allocateStats(plan.body);
     const ok = !!(allocR && allocR.ok);
@@ -1424,11 +1550,15 @@ async function pityTriggerRestore() {
         postResetTotal[k] = Math.max(0, (pre.player.stats?.total?.[k] || 0) - (pre.player.stats?.base?.[k] || 0));
       }
     }
+    const postStats = (player?.stats && player.stats.total)
+      ? player.stats
+      : buildPostResetStats(pre.player.stats);
     const plan = computeStatPlan({
       totalPoints: totalPts,
       postResetTotal,
       priority: m.statPriority,
       enduranceBase: m.enduranceBase,
+      stats: postStats,
     });
     const allocR = await ReelaxApi.allocateStats(plan.body);
     const ok = !!(allocR && allocR.ok);
