@@ -4,6 +4,14 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.1.1] - 2026-11-04
+
+### 修复：洗点后加点严重超额（目标被大幅甩开）
+- `monitor.js`（新增 `readPostResetStats`）：洗点后轮询 `playerStats` 直到 `base` 全为 0（最多 6 次 / 间隔 250ms），拿到「零投入态」的服务端真实 `stats`。遗物/公会百分比会随 base 投入变化，必须用 `base=0` 时的真实 `artifactPercentage`/`guild` 建模，沿用洗点前的高百分比会严重低估所需投入。
+- `monitor.js`（`planPriorityAllocation`）：删除 v2.1.0 引入的「投影 stats 迭代」——投影中 `artifactPercentage` 固定不变而 eligible 随 base 增长，反推出的遗物基点越算越小，导致每轮追加投入、越投越多。改为用零投入态 stats 单次二分反推 `requiredStatInvestment`，一次到位。
+- `monitor.js`（`executeCompEnd` / `pityTriggerRestore`）：洗点后统一改用 `readPostResetStats()` 的零投入态数据（`stats` + `unspentStatPoints`），失败时才回退原有 `playerStats` / `reset` 响应体。
+- 行为不变项：优先级顺序、`target=0` 吃剩余、全部达标全加最后一项、耐力预留、比赛期间全加运气等规则均保持原样。
+
 ## [v2.1.0] - 2026-11-04
 
 ### 优化：加点目标按「游戏面板预测」精确反推投入点数

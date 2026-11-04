@@ -796,6 +796,27 @@ function buildPostResetStats(source) {
   return out;
 }
 
+// 洗点后读取「零投入态」真实 stats：轮询 playerStats，直到 base 全为 0（或重试耗尽）。
+// 关键：遗物/公会百分比加成会随 base 投入变化，洗点后必须用 base=0 时服务端重算的真实
+// artifactPercentage/guild 来建面板模型，不能用洗点前的高 % 反推（否则严重低估所需投入）。
+// 返回 { stats, unspent } 或 null。
+async function readPostResetStats(maxTries = 6, gapMs = 250) {
+  for (let i = 0; i < maxTries; i++) {
+    const fresh = await ReelaxApi.playerStats().catch(() => null);
+    const p = fresh && fresh.ok ? fresh.player : null;
+    if (p && p.stats && p.stats.total) {
+      const base = p.stats.base || {};
+      const allZero = STAT_KEYS.every((k) => {
+        const v = Number(base[k]) || 0;
+        return k === 'endurance' ? v <= 100 : v <= 0;
+      });
+      if (allZero) return { stats: p.stats, unspent: p.unspentStatPoints };
+    }
+    if (i < maxTries - 1) await new Promise((r) => setTimeout(r, gapMs));
+  }
+  return null;
+}
+
 // 纯函数：按优先级生成加点 body。
 // statsTotal: 当前各属性「总点数」（含加成）{strength,intelligence,luck,endurance}（无完整 stats 时退化用）；
 // stats:      完整 stats 对象（有则用面板预测反推「需投入点」，正确处理公会/遗物百分比加成）；
@@ -813,29 +834,23 @@ function planPriorityAllocation(statsTotal, unspent, priority, enduranceReserve,
     return Number.isFinite(v) && v > 0 ? v : 0;
   };
   const useModel = !!(stats && stats.total);
-  // 面板模型的百分比基数会随投入增大而变化（公会%/遗物基点是按当前 eligible 池反推的），
-  // 一次线性反推会略微欠投。故用「投影 stats」迭代：每次给出后把投入记入投影 base，再按新池重解剩余。
-  const proj = useModel ? JSON.parse(JSON.stringify(stats)) : null;
-  if (proj) { proj.base = Object.assign({}, proj.base); }
+  // 单次反推：requiredStatInvestment 用零投入态真实 stats（各属性的 eligible 只含自身字段，互不影响），
+  // 二分求解「使面板 total 达到 target 所需 base」一次到位。切勿用「投影迭代」——投影时 artifactPercentage
+  // 固定不变而 eligible 随 base 增长，反推出的遗物基点会越来越小，导致越投越多、目标被大幅甩开。
   const order = [];
   const record = (stat, added) => {
     const hit = order.find((o) => o.stat === stat);
     if (hit) hit.added += added; else order.push({ stat, added });
   };
   const fillModel = (stat, target) => {
-    // 迭代逼近：最多 64 轮，每轮按当前投影池反推还需投入多少，加剩余可用点，直至达标或用尽。
-    for (let guard = 0; guard < 64 && remain > 0; guard++) {
-      const req = requiredStatInvestment(stat, target, proj);
-      const have = currentStatInvestment(stat, proj);
-      const deficit = req - have;
-      if (deficit <= 0) return;
-      const give = Math.min(deficit, remain);
-      proj.base[stat] = (proj.base[stat] || 0) + give;
-      body[stat] += give;
-      record(stat, give);
-      remain -= give;
-      if (give < deficit) return; // 点数用尽
-    }
+    const req = requiredStatInvestment(stat, target, stats);
+    const have = currentStatInvestment(stat, stats);
+    const deficit = req - have;
+    if (deficit <= 0) return;
+    const give = Math.min(deficit, remain);
+    body[stat] += give;
+    record(stat, give);
+    remain -= give;
   };
   for (const it of list) {
     if (remain <= 0) break;
@@ -1157,15 +1172,19 @@ async function executeCompEnd() {
     if (!pre.ok) { m.lastRespecResult = { ok: false, reason: 'stats-failed', at: Date.now() }; return m.lastRespecResult; }
     const resetR = await ReelaxApi.resetStats();
     if (!resetR || !resetR.ok) { m.lastRespecResult = { ok: false, reason: 'reset-failed', at: Date.now() }; return m.lastRespecResult; }
-    // 洗点后仍拉一次最新 playerStats 作「总可分配点」来源（unspentStatPoints 最准）。
-    const fresh = await ReelaxApi.playerStats();
-    const after = (fresh && fresh.ok && fresh.player)
-      ? fresh.player
-      : (ReelaxApi.safeParseJSON(resetR.body) || {}).player || null;
+    // 洗点后轮询读取「零投入态」真实 stats（base 全 0，% 已按清零后的池重算）。
+    // 这是关键：遗物/公会百分比随 base 变化，必须用洗点后的真实 % 建模型反推投入量，
+    // 否则用洗点前高 % 会严重低估所需 base → 目标被大幅甩开。
+    const zeroState = await readPostResetStats();
+    const fresh = zeroState ? { ok: true, player: null } : await ReelaxApi.playerStats();
+    const after = zeroState
+      ? { stats: zeroState.stats, unspentStatPoints: zeroState.unspent }
+      : ((fresh && fresh.ok && fresh.player)
+        ? fresh.player
+        : (ReelaxApi.safeParseJSON(resetR.body) || {}).player || null);
     if (!after) { m.lastRespecResult = { ok: false, reason: 'reset-parse-failed', body: resetR.body, at: Date.now() }; return m.lastRespecResult; }
     const totalPts = after.unspentStatPoints != null ? after.unspentStatPoints : (pre.player.unspentStatPoints || 0);
-    // 洗点后各属性总点数：优先用洗点后实读的 stats.total（含残留加成）；
-    // 读不到则回退「洗点前 total − base」（同刻加成完整，避开 reset 后瞬时未同步问题）。
+    // 洗点后各属性总点数：用零投入态真实 stats.total（含保留的加成）。
     const postResetTotal = {};
     for (const k of STAT_KEYS) {
       const t = after.stats?.total?.[k];
@@ -1537,10 +1556,14 @@ async function pityTriggerRestore() {
     if (!pre.ok) return { ok: false, reason: 'stats-failed' };
     const resetR = await ReelaxApi.resetStats();
     if (!resetR || !resetR.ok) return { ok: false, reason: 'reset-failed' };
-    const fresh = await ReelaxApi.playerStats();
-    const player = (fresh && fresh.ok && fresh.player) ? fresh.player : (ReelaxApi.safeParseJSON(resetR.body) || {}).player;
+    // 洗点后轮询读取零投入态真实 stats（base 全 0、% 已按清零池重算），口径同 executeCompEnd。
+    const zeroState = await readPostResetStats();
+    const fresh = zeroState ? { ok: true, player: null } : await ReelaxApi.playerStats();
+    const player = zeroState
+      ? { stats: zeroState.stats, unspentStatPoints: zeroState.unspent }
+      : ((fresh && fresh.ok && fresh.player) ? fresh.player : (ReelaxApi.safeParseJSON(resetR.body) || {}).player);
     const totalPts = player && player.unspentStatPoints != null ? player.unspentStatPoints : (pre.player.unspentStatPoints || 0);
-    // 洗点后各属性总点数（口径同 executeCompEnd）：优先洗点后实读 total，否则回退 pre total−base
+    // 洗点后各属性总点数（口径同 executeCompEnd）：优先零投入态实读 total，否则回退 pre total−base
     const postResetTotal = {};
     for (const k of STAT_KEYS) {
       const t = player?.stats?.total?.[k];
