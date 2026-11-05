@@ -32,7 +32,7 @@ description: Reelax 钓鱼游戏浏览器脚本开发与运维技能。当用户
 
 - **数据获取**：优先用游戏内置 API `window.arcaneReelax` 的 `getSnapshot()`（零 HTTP 请求）；API 未就绪时回退「API 直调」请求 `/api/*`。
 - **地图优先级**（`state.mapPriority`）：赛事 > 跟随船 > 金风 > 经验 > 各种天气 > 奥术涌动。只尝试到「经验」为止，其后不自动切图。
-- **跟随船**：`pickFollowBoat()` 在组队船中不主动换图，锁在船所在地图（`party.boatBiomeId`）。**船过期**（`rentalEndsAt` 租赁到期 / `maintenanceDueAt` 保养逾期）或**船图玩家未解锁**（不在 `unlockedBiomes`）时，`return null` 让优先级循环继续 fallback 到天气等，并在 `state.followBoatFallback` 记录原因（只在状态切换时打一次日志）。
+- **跟随船**：`pickFollowBoat()` 在组队船中不主动换图，锁在船所在地图（`party.boatBiomeId`）。**船过期**（`rentalEndsAt` 租赁到期 / `maintenanceDueAt` 保养逾期）或**船图玩家未解锁**（不在 `unlockedBiomes`）时，`return null` 让优先级循环继续 fallback 到天气等，并在 `state.followBoatFallback` 记录原因（只在状态切换时打一次日志）。**四海同航**（`state.seaAllNavigate`，面板开关，默认关）：开启时 `pickFollowBoat()` 直接返回 `null`，自动切图完全忽略船所在位置，直接按后续优先级选最优图。
 - **船长/舵手自动开船**（`state.autoSail`，设置页总开关，默认开）：船长/舵手且 `party.canChangeBoatBiome && party.status === 'active'` 时，**先判断船长本人当前图（`isCurrent`）是否 ≠ 船图（`party.boatBiomeId`）**——若不一致且本人图已解锁，则整船开往**本人图**（手动切图船立即跟随）；本人图已与船图一致时退回 `pickOptimalIgnoringBoat()` 算出的整船最优图。目标 ≠ `party.boatBiomeId` 则调 `gameApi.party.travelTo()` 整船切图（`sailBoat()`，无 HTTP 兜底）；船员/开关关/船不可移动时走原跟随船逻辑。`party.travelTo()` 失败仅报错，不刷页。**统一规则**：只要是能开船的船长，赛事/雷暴/优选等**任意优先级触发的脚本切图都整船 `party.travelTo`**（个人切图分支 `switchBiome` 仅在非船长/不能开船时走），船始终跟随船长。开船逻辑抽成 `executeSail()` 供「跟船优先级胜出」与「船长模式脚本切图」复用。
 - **杆数补满**（见下文第 4 节刷新机制）：服务端时间精确调度为主（`snapshot.fishing` 算下次补杆时刻），DOM 兜底节流 30s；到点调 `game.fishing.refill()`，失败回退 DOM 点击。
 - **经验加成（选图）**：`calculateExpBonus()` 把各乘区（天气/公会图腾/公会区域/专精/天赋/buff）**乘算**合成（`(1+a/1e4)×(1+b/1e4)×...-1`，基点返回），与游戏实际经验乘算一致；加法会低估组合加成导致选图偏差。

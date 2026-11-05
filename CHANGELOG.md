@@ -4,6 +4,14 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.2.0] - 2026-11-04
+
+### 新功能：四海同航（自动切图忽略船所在位置）
+- `scripts/聚合.js`：新增状态项 `seaAllNavigate`（默认 `false`），随 `saveState` 持久化，读取时 `=== true` 才开启（未保存过的历史数据视为关）。
+- `scripts/聚合.js`（`pickFollowBoat`）：开关开启时直接返回 `null`，跳过「跟船」逻辑，自动切图不再以船所在图为目标，按后续优选优先级选出最优图。
+- `scripts/聚合.js`（面板）：新增「四海同航」开关行 `ramp-option-row-seanav` / `ramp-seanav-switch`（含说明文字）；`updateUI` 同步开关状态；点击后写日志、`saveState()` 并在 `autoSwitch` 开启时立即 `requestCheck({ fast: true })` 生效。
+- 默认关闭，不改变现有跟随船行为。
+
 ## [v2.1.1] - 2026-11-04
 
 ### 修复：洗点后加点严重超额（目标被大幅甩开）

@@ -150,6 +150,7 @@
     boatWebhookSeeded: false, // 船webhook首查已播种（避免刷新页面后误发船状态）
     followBoatFallback: null, // 跟随船 fallback 原因（船过期/船图未解锁），无则 null（仅内存）
     autoSail: true,           // 船长/舵手自动开船总开关（默认开启，船员无效）
+    seaAllNavigate: false,    // 四海同航开关（默认关）：开启后自动切图不考虑船所在位置（跳过跟随船，直接按最优图选）
     excludeMasteryInSelect: true, // 优选选图时剔除地图专精点增益（默认开启）
     useNewScoring: true,       // 优选评分算法开关：true=新算法(倍率×天气鱼系数，0.55/0.45)；false=旧算法(编号即金币，0.6/0.4，含雷暴独立优先级)
     useOfficialRoute: false,   // 官方航线开关（默认关）：开启后把官方 routeAssistant.travel() 服务端推荐的目标图纳入选图优先级
@@ -276,6 +277,7 @@
         baitMap: state.baitMap,
         collapsedSections: state.collapsedSections,
         autoSail: state.autoSail,
+        seaAllNavigate: state.seaAllNavigate,
         excludeMasteryInSelect: state.excludeMasteryInSelect,
         useNewScoring: state.useNewScoring,
         useOfficialRoute: state.useOfficialRoute,
@@ -335,6 +337,7 @@
         ? { priority: !!parsed.collapsedSections.priority, bait: !!parsed.collapsedSections.bait, guildtax: !!parsed.collapsedSections.guildtax }
         : { priority: false, bait: false, guildtax: false };
       state.autoSail = parsed.autoSail !== false;
+      state.seaAllNavigate = parsed.seaAllNavigate === true; // 默认关
       state.excludeMasteryInSelect = parsed.excludeMasteryInSelect !== false;
       state.useNewScoring = parsed.useNewScoring !== false;
       state.useOfficialRoute = parsed.useOfficialRoute === true; // 默认关（未保存过/历史数据视为关）
@@ -1174,6 +1177,8 @@
 
     // 跟船：在组队船中时不主动换图，保持随船（目标=船的当前地图）
     function pickFollowBoat() {
+      // 四海同航：开启后自动切图不考虑船所在位置，跳过跟随船逻辑，直接交给后续优先级
+      if (state.seaAllNavigate) return null;
       const party = data.party;
       if (!party || !party.isInParty) {
         state.followBoatFallback = null;
@@ -3983,6 +3988,17 @@
             </span>
           </div>
 
+          <div class="ramp-option-row" id="ramp-option-row-seanav">
+            <span class="ramp-option-text">
+              <span>四海同航</span>
+              <div class="ramp-option-desc">开启后自动切图不考虑船所在位置（跳过跟随船，直接按最优图选）</div>
+            </span>
+            <span class="ramp-switch" id="ramp-seanav-switch">
+              <input type="checkbox" role="switch" aria-label="四海同航">
+              <span class="ramp-switch-track"></span>
+            </span>
+          </div>
+
           <div class="ramp-option-row" id="ramp-option-row-mastery-select">
             <span class="ramp-option-text">
               <span>优选剔除专精增益</span>
@@ -4353,6 +4369,19 @@
       } else {
         log('\u8239\u957f/\u8238\u624b\u81ea\u52a8\u5f00\u8239\u5df2\u5173\u95ed', 'info');
       }
+      saveState();
+      updateUI();
+    });
+
+    // 四海同航开关：开启后自动切图不考虑船所在位置（跳过跟随船，直接按最优图选）
+    document.getElementById('ramp-seanav-switch').addEventListener('click', () => {
+      state.seaAllNavigate = !state.seaAllNavigate;
+      if (state.seaAllNavigate) {
+        log('四海同航已开启：自动切图不再考虑船所在位置', 'success');
+      } else {
+        log('四海同航已关闭：恢复跟随船', 'info');
+      }
+      if (state.autoSwitch) requestCheck({ fast: true });
       saveState();
       updateUI();
     });
@@ -4781,7 +4810,8 @@
       }
     };
     setSwitchChecked('ramp-switch', state.autoSwitch);
-    setSwitchChecked('ramp-sail-switch', state.autoSail);
+      setSwitchChecked('ramp-sail-switch', state.autoSail);
+      setSwitchChecked('ramp-seanav-switch', state.seaAllNavigate);
     setSwitchChecked('ramp-mastery-select-switch', state.excludeMasteryInSelect);
     setSwitchChecked('ramp-newscoring-switch', state.useNewScoring);
     setSwitchChecked('ramp-official-switch', state.useOfficialRoute);
