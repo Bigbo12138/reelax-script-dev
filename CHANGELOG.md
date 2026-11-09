@@ -4,6 +4,14 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.2.1] - 2026-11-05
+
+### 修复：一键市场「修改求购价 / 修改在售价」拉单失败被当成「无对手」而误判
+- `scripts/一键市场.js`（新增 `fetchOrderBook(fid, retries=3)`）：单鱼订单簿拉取统一走带重试的封装，限流（`isRateLimited`）退避 3s、其余失败短退避 `600 + i*600`ms 重试；返回 `{ ok, ob, error }`，`ok=false` 表示拉取异常（超时/限流/非200/解析失败）。
+- `scripts/一键市场.js`（修改求购价）：原先 `getJSON` 失败时 `bestTwoLevels` 拿到空值 → `highest == null` → 误判为「已是最高价」直接 `ok++` 跳过。改为 `!fetched.ok` 时计入 `skipped`（异常），进度显示「异常 N 条」，`continue` 交由用户重扫，绝不当作无求购。
+- `scripts/一键市场.js`（修改在售价）：原先失败时 `lowestAskFromBook` 返回 `null` → 误判为「已是最低价」。改为同样走 `fetchOrderBook`，异常计入 `skipped` 并在状态栏展示「异常 N 条」，不再误判。
+- 无接口/设置变更，仅影响扫描判定的健壮性。
+
 ## [v2.2.0] - 2026-11-04
 
 ### 新功能：四海同航（自动切图忽略船所在位置）

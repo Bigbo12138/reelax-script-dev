@@ -52,6 +52,29 @@
     try { return { ok: true, data: JSON.parse(r.body) }; }
     catch (e) { return { ok: false, error: 'parse' }; }
   }
+  // 拉取单鱼订单簿（带重试 + 限流退避）。返回 { ok, ob, error }：
+  //   ok=true  → ob 为有效订单簿（可能买卖档为空，由调用方按真实空簿处理）
+  //   ok=false → 拉取失败（超时/限流/非200/解析失败），调用方必须当作「异常/跳过」，绝不可当作「无求购/无在售」
+  async function fetchOrderBook(fid, retries) {
+    const maxTries = (retries == null ? 3 : retries);
+    let lastErr = '';
+    for (let i = 0; i < maxTries; i++) {
+      let ob;
+      try {
+        ob = await getJSON('/api/market/fish/' + encodeURIComponent(fid) + '/order-book');
+      } catch (e) {
+        ob = { ok: false, error: String(e && e.message || e) };
+      }
+      if (ob && ob.ok) return { ok: true, ob };
+      // 未 ok：识别限流 → 退避后重试；其余（超时/网络/解析）短退避重试
+      lastErr = (ob && ob.error) || 'fetch-failed';
+      if (i < maxTries - 1) {
+        if (isRateLimited(ob)) await sleep(3000); else await sleep(600 + i * 600);
+      }
+    }
+    return { ok: false, error: lastErr };
+  }
+
   async function postJSON(path, method, body) {
     const r = await api(path, method || 'POST', body === undefined ? null : body);
     if (!r) return { ok: false, error: 'no-response' };
@@ -1204,8 +1227,15 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const myBid = o.limitUnitPrice;
       const qty = o.remainingQuantity || 1;
       try {
-        const ob = await getJSON('/api/market/fish/' + encodeURIComponent(fid) + '/order-book');
-        const two = bestTwoLevels(ob, 'buy');
+        const fetched = await fetchOrderBook(fid);
+        if (!fetched.ok) {
+          // 拉取失败（超时/限流/非200）绝不能当作「无求购=最高价」，记为异常，交由用户重扫
+          skipped++;
+          await sleep(180);
+          if (st) st.textContent = `${i + 1}/${buys.length} ｜ 非最高 ${notMax} 条 ｜ 异常 ${skipped} 条`;
+          continue;
+        }
+        const two = bestTwoLevels(fetched.ob, 'buy');
         const highest = two.m1;
         if (highest == null) {
           ok++;
@@ -1352,7 +1382,15 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const myPrice = o.limitUnitPrice;
       const qty = o.remainingQuantity || 1;
       try {
-        const ob = await getJSON('/api/market/fish/' + encodeURIComponent(fid) + '/order-book');
+        const fetched = await fetchOrderBook(fid);
+        if (!fetched.ok) {
+          // 拉取失败绝不能当作「无在售=最低价」，记为异常
+          skipped++;
+          await sleep(180);
+          setStatus(st, `扫描 ${i + 1}/${sells.length} ｜ 非最低 ${notMin} 条 ｜ 可议价 ${_gapList.length} 条 ｜ 异常 ${skipped} 条`);
+          continue;
+        }
+        const ob = fetched.ob;
         const lowest = lowestAskFromBook(ob);
         if (lowest == null) {
           ok++;
