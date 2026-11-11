@@ -3148,6 +3148,9 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
           '&fishBiome=' + encodeURIComponent(it.biomeId);
         const star = mset && mset.has(it.fishId) ? '*' : '';
         const linkColor = star ? '#4aa3ff' : '#d4a520';
+        const ck = checkedBoxes.has(it.fishId) ? ' checked' : '';
+        // 专精鱼：括号外直接追加当前专精等级 LV{n}
+        const lvlTxt = star && lvlMap.has(it.fishId) ? ` LV${lvlMap.get(it.fishId)}` : '';
         const askTxt = it.ask == null ? '—' : fmtGold(it.ask);
         const bidTxt = it.bid == null ? '—' : fmtGold(it.bid);
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #1c1c20;">
