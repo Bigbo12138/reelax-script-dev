@@ -787,17 +787,25 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (!levels[0]) return { m1: null, m2: null };
     return { m1: levels[0], m2: (levels[1] != null ? levels[1] : null) };
   }
-  // 忽略状态：sessionIgnored（本次扫描内，每次扫描重置）与 permIgnored（永久，跨扫描持久化，localStorage）
-  const PERM_IGNORE_KEY = 'r1cm-perm-ignored';
-  let _sessionIgnored = new Set(); // 本次「忽略」的鱼名（每次扫描重置）
-  function loadPermIgnored() {
-    try { return new Set(JSON.parse(localStorage.getItem(PERM_IGNORE_KEY) || '[]') || []); }
+  // 忽略状态：挂单（sell）与求购（buy）各用一套，互不相通。
+  // 每侧都有 sessionIgnored（本次扫描内，每次扫描重置）与 permIgnored（永久，跨扫描持久化，localStorage）。
+  const SELL_PERM_IGNORE_KEY = 'r1cm-sell-perm-ignored';
+  const BUY_PERM_IGNORE_KEY = 'r1cm-buy-perm-ignored';
+  function loadPermIgnored(key) {
+    try { return new Set(JSON.parse(localStorage.getItem(key) || '[]') || []); }
     catch (_e) { return new Set(); }
   }
-  function savePermIgnored() {
-    try { localStorage.setItem(PERM_IGNORE_KEY, JSON.stringify(Array.from(_permIgnored))); } catch (_e) {}
+  function savePermIgnored(key, set) {
+    try { localStorage.setItem(key, JSON.stringify(Array.from(set))); } catch (_e) {}
   }
-  let _permIgnored = loadPermIgnored(); // 「永久忽略」的鱼名（跨扫描保持）
+  // 挂单侧（低价重挂/下架）忽略集合
+  let _sellSessionIgnored = new Set();
+  let _sellPermIgnored = loadPermIgnored(SELL_PERM_IGNORE_KEY);
+  // 求购侧（最高价下架/重挂）忽略集合
+  let _buySessionIgnored = new Set();
+  let _buyPermIgnored = loadPermIgnored(BUY_PERM_IGNORE_KEY);
+  function saveSellPermIgnored() { savePermIgnored(SELL_PERM_IGNORE_KEY, _sellPermIgnored); }
+  function saveBuyPermIgnored() { savePermIgnored(BUY_PERM_IGNORE_KEY, _buyPermIgnored); }
 
   // fishId 形如 b_010_arcane_05 → 地图号 b_010 → [B10]；无匹配返回 ''
   function mapPrefixFromFishId(fishId) {
@@ -869,20 +877,24 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     }
   }
 
-  // 是否已被忽略（本次扫描 session 或永久）：被忽略的不参与一键重挂/下架
-  function isIgnored(item) {
-    return _sessionIgnored.has(item.name) || _permIgnored.has(item.name);
+  // 是否已被忽略（本次扫描 session 或永久）：side 区分挂单('sell')/求购('buy')，两套互不相通
+  function isIgnored(item, side) {
+    if (side === 'buy') return _buySessionIgnored.has(item.name) || _buyPermIgnored.has(item.name);
+    return _sellSessionIgnored.has(item.name) || _sellPermIgnored.has(item.name);
   }
   // 渲染「非最优价挂单/求购」列表（每行：名称 + 忽略 / 永久忽略 两个可点击按钮）
   // list: 该列表条目的数组；listId: 渲染到的容器 id；priceOf(item): 返回展示价文案
-  function renderIgnoreList(list, listId, priceOf) {
+  function renderIgnoreList(list, listId, priceOf, side) {
     const box = el(listId);
     if (!box) return;
     if (!list.length) { box.innerHTML = ''; return; }
+    const sess = side === 'buy' ? _buySessionIgnored : _sellSessionIgnored;
+    const perm = side === 'buy' ? _buyPermIgnored : _sellPermIgnored;
+    const savePerm = side === 'buy' ? saveBuyPermIgnored : saveSellPermIgnored;
     box.innerHTML = list.map((it) => {
       const k = escapeHtml(it.name);
-      const isSess = _sessionIgnored.has(it.name);
-      const isPerm = _permIgnored.has(it.name);
+      const isSess = sess.has(it.name);
+      const isPerm = perm.has(it.name);
       const rowStyle = (isSess || isPerm) ? 'opacity:.55;text-decoration:line-through;' : '';
       return `<div data-name="${escapeHtml(it.name)}" style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #2a2a30;font-size:12px;color:#d0d0d0;${rowStyle}">
         <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${k}（${priceOf(it)}）</span>
@@ -897,14 +909,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const it = list.find((x) => x.name === name);
       if (!it) return;
       if (e.target.classList.contains('r1cm-ign')) {
-        if (_sessionIgnored.has(name)) _sessionIgnored.delete(name); else _sessionIgnored.add(name);
+        if (sess.has(name)) sess.delete(name); else sess.add(name);
       } else if (e.target.classList.contains('r1cm-pign')) {
-        if (_permIgnored.has(name)) { _permIgnored.delete(name); savePermIgnored(); }
-        else { _permIgnored.add(name); savePermIgnored(); }
+        if (perm.has(name)) { perm.delete(name); savePerm(); }
+        else { perm.add(name); savePerm(); }
         // 永久忽略：清除本次 session 忽略，使状态与「永久」一致
-        if (_permIgnored.has(name)) _sessionIgnored.delete(name);
+        if (perm.has(name)) sess.delete(name);
       } else { return; }
-      renderIgnoreList(list, listId, priceOf);
+      renderIgnoreList(list, listId, priceOf, side);
     };
   }
   // 清空忽略结果区
@@ -924,20 +936,20 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     region.onclick = null;
     region.innerHTML = '';
     if (!_nonMin.length) { renderGapSection('sell', 'r1cm-log'); return; }
-    const normal = _nonMin.filter((x) => !isIgnored(x));
-    const ignoreds = _nonMin.filter((x) => isIgnored(x));
+    const normal = _nonMin.filter((x) => !isIgnored(x, 'sell'));
+    const ignoreds = _nonMin.filter((x) => isIgnored(x, 'sell'));
     const renderRow = (it) => {
       const idStr = escapeHtml(String(it.id));
       const k = escapeHtml(it.name);
       const pureRaw = it.pure || it.name || String(it.fishId || '');
       const linkUrl = it.url || ('https://reelax.cn/market?fishSearch=' + encodeURIComponent(pureRaw));
-      const ign = isIgnored(it);
+      const ign = isIgnored(it, 'sell');
       const rowStyle = ign ? 'opacity:.55;' : '';
       const ignTag = ign ? '<span style="color:#ff9800;margin-left:6px;">(已忽略)</span>' : '';
       const ck = (!ign && _nonMinChecked.has(String(it.id))) ? ' checked' : '';
       const dis = ign ? ' disabled' : '';
-      const isPerm = _permIgnored.has(it.name);
-      const isSess = _sessionIgnored.has(it.name);
+      const isPerm = _sellPermIgnored.has(it.name);
+      const isSess = _sellSessionIgnored.has(it.name);
       // 永久忽略的只显示「取消永久忽略」；否则按 session 忽略状态显示忽略/取消忽略
       let ignLinks = '';
       if (isPerm) {
@@ -982,16 +994,16 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const link = e.target && e.target.closest ? e.target.closest('.rlb-link') : null;
       if (link) { e.preventDefault(); window.location.assign(link.getAttribute('data-url')); return; }
       if (e.target.classList.contains('r1cm-ign')) {
-        const nowIgn = _sessionIgnored.has(it.name);
-        if (nowIgn) _sessionIgnored.delete(it.name); else _sessionIgnored.add(it.name);
+        const nowIgn = _sellSessionIgnored.has(it.name);
+        if (nowIgn) _sellSessionIgnored.delete(it.name); else _sellSessionIgnored.add(it.name);
         _nonMinChecked.delete(String(it.id)); // 忽略时取消勾选，避免误重挂
         renderCheapList(); return;
       }
       if (e.target.classList.contains('r1cm-pign')) {
-        if (_permIgnored.has(it.name)) _permIgnored.delete(it.name); else _permIgnored.add(it.name);
-        if (_permIgnored.has(it.name)) _sessionIgnored.delete(it.name);
-        if (_permIgnored.has(it.name)) _nonMinChecked.delete(String(it.id));
-        savePermIgnored();
+        if (_sellPermIgnored.has(it.name)) _sellPermIgnored.delete(it.name); else _sellPermIgnored.add(it.name);
+        if (_sellPermIgnored.has(it.name)) _sellSessionIgnored.delete(it.name);
+        if (_sellPermIgnored.has(it.name)) _nonMinChecked.delete(String(it.id));
+        saveSellPermIgnored();
         renderCheapList(); return;
       }
     };
@@ -1129,8 +1141,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const k = escapeHtml(it.name);
       const idStr = escapeHtml(String(it.id));
       const ck = _maxChecked.has(String(it.id)) ? ' checked' : '';
-      const isSess = _sessionIgnored.has(it.name);
-      const isPerm = _permIgnored.has(it.name);
+      const isSess = _buySessionIgnored.has(it.name);
+      const isPerm = _buyPermIgnored.has(it.name);
       const rowStyle = (isSess || isPerm) ? 'opacity:.55;' : '';
       const ignTag = (isSess || isPerm) ? '<span style="color:#ff9800;margin-left:6px;">(已忽略)</span>' : '';
       return `<div data-id="${idStr}" style="padding:5px 4px;border-bottom:1px solid #2a2a30;font-size:12px;color:#e0d6f5;${rowStyle}">
@@ -1177,13 +1189,13 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         return;
       }
       if (e.target.classList.contains('r1cm-ign')) {
-        if (_sessionIgnored.has(it.name)) _sessionIgnored.delete(it.name); else _sessionIgnored.add(it.name);
+        if (_buySessionIgnored.has(it.name)) _buySessionIgnored.delete(it.name); else _buySessionIgnored.add(it.name);
         renderMaxList(); return;
       }
       if (e.target.classList.contains('r1cm-pign')) {
-        if (_permIgnored.has(it.name)) { _permIgnored.delete(it.name); savePermIgnored(); }
-        else { _permIgnored.add(it.name); savePermIgnored(); }
-        if (_permIgnored.has(it.name)) _sessionIgnored.delete(it.name);
+        if (_buyPermIgnored.has(it.name)) { _buyPermIgnored.delete(it.name); saveBuyPermIgnored(); }
+        else { _buyPermIgnored.add(it.name); saveBuyPermIgnored(); }
+        if (_buyPermIgnored.has(it.name)) _buySessionIgnored.delete(it.name);
         renderMaxList(); return;
       }
     };
@@ -1228,8 +1240,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     _gapList = [];
     _gapChecked = new Set();
     clearMaxList();
-    _sessionIgnored = new Set(); // 每次扫描：忽略（本次）重置为初始，永久忽略保持
-    _permIgnored = loadPermIgnored(); // 重新读取，保证跨会话一致
+    _buySessionIgnored = new Set(); // 每次扫描：求购侧忽略（本次）重置为初始，永久忽略保持
+    _buyPermIgnored = loadPermIgnored(BUY_PERM_IGNORE_KEY); // 重新读取，保证跨会话一致
     // 分页拉取我的全部鱼挂单（min/max 共用 helper，避免只读一页漏单）
     const mine = await fetchMyFishOrders();
     const orders = (mine.ok && Array.isArray(mine.orders)) ? mine.orders : null;
@@ -1309,7 +1321,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     let okN = 0, failN = 0;
     for (const it of targets) {
       // 被忽略（本次或永久）的挂单不下架：从待处理里移除（已视作处理），其余项保留并继续显示
-      if (isIgnored(it)) {
+      if (isIgnored(it, 'buy')) {
         _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id));
         _maxChecked.delete(String(it.id));
         renderMaxList();
@@ -1331,7 +1343,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (st) st.textContent = `—— 下架完成：成功 ${okN} 条 / 失败 ${failN} 条 ——`;
 // 若仍有未处理（未勾选 / 下架失败 / 其余）的非最高价求购，保持列表与「一键下架」按钮，便于继续逐条处理；
     // 仅剩已忽略项视作处理完毕，切回「最高价检测」。
-    const remaining = _nonMax.filter((x) => !isIgnored(x));
+    const remaining = _nonMax.filter((x) => !isIgnored(x, 'buy'));
     if (remaining.length) {
       if (st) st.textContent = `仍有 ${remaining.length} 条未处理（勾选后可继续「一键下架」）。`;
       renderMaxList();
@@ -1384,8 +1396,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     clearCheapList();
     _gapList = [];
     _gapChecked = new Set();
-    _sessionIgnored = new Set(); // 每次扫描：忽略（本次）重置为初始，永久忽略保持
-    _permIgnored = loadPermIgnored(); // 重新读取，保证跨会话一致
+    _sellSessionIgnored = new Set(); // 每次扫描：挂单侧忽略（本次）重置为初始，永久忽略保持
+    _sellPermIgnored = loadPermIgnored(SELL_PERM_IGNORE_KEY); // 重新读取，保证跨会话一致
     // 分页拉取我的全部鱼挂单（min/max 共用 helper）
     const mine = await fetchMyFishOrders();
     const orders = (mine.ok && Array.isArray(mine.orders)) ? mine.orders : null;
@@ -1469,7 +1481,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
   async function onRelistNonMin() {
     const st = el('r1cm-status');
     if (!_nonMin.length) { setStatus(st, 'ℹ️ 暂无待重挂的非最低价挂单。请先点击「最低价检测」后再操作。'); return; }
-    const targets = _nonMin.filter((x) => _nonMinChecked.has(String(x.id)) && !isIgnored(x));
+    const targets = _nonMin.filter((x) => _nonMinChecked.has(String(x.id)) && !isIgnored(x, 'sell'));
     if (!targets.length) { setStatus(st, 'ℹ️ 未勾选任何可重挂的挂单（已忽略的不会重挂）。请先在列表中勾选。'); return; }
     const cfgNow = readPanel();
     const adj = Number(cfgNow.adj) || 0;
@@ -1477,7 +1489,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     let okN = 0, failN = 0, skipN = 0;
     for (let i = 0; i < targets.length; i++) {
       const it = targets[i];
-      if (isIgnored(it)) {
+      if (isIgnored(it, 'sell')) {
         _nonMin = _nonMin.filter((x) => String(x.id) !== String(it.id));
         _nonMinChecked.delete(String(it.id));
         renderCheapList();
@@ -1517,7 +1529,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     }
     setStatus(st, `—— 重挂完成：成功 ${okN} 条 / 失败 ${failN} 条 / 跳过 ${skipN} 条 ——`);
     // 剩余的未处理（未勾选 / 失败）非最低价挂单继续在清单显示；全部处理完或仅剩已忽略才清空
-    if (_nonMin.some((x) => !isIgnored(x))) {
+    if (_nonMin.some((x) => !isIgnored(x, 'sell'))) {
       renderCheapList();
       return;
     }
@@ -1529,7 +1541,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
   // 一键下架勾选的非最低价卖单（只撤单，不重挂）
   async function onDelistNonMin() {
     const st = el('r1cm-status');
-    const targets = _nonMin.filter((x) => _nonMinChecked.has(String(x.id)) && !isIgnored(x));
+    const targets = _nonMin.filter((x) => _nonMinChecked.has(String(x.id)) && !isIgnored(x, 'sell'));
     if (!targets.length) {
       setStatus(st, 'ℹ️ 未勾选任何可下架的挂单（已忽略的不会下架）。请先在列表中勾选。');
       return;
@@ -1538,7 +1550,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     let okN = 0, failN = 0;
     for (let i = 0; i < targets.length; i++) {
       const it = targets[i];
-      if (isIgnored(it)) { _nonMin = _nonMin.filter((x) => String(x.id) !== String(it.id)); _nonMinChecked.delete(String(it.id)); renderCheapList(); continue; }
+      if (isIgnored(it, 'sell')) { _nonMin = _nonMin.filter((x) => String(x.id) !== String(it.id)); _nonMinChecked.delete(String(it.id)); renderCheapList(); continue; }
       let del = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
       if (!(del && del.ok && del.status === 200) && (await backoffIfRateLimited(del))) {
         del = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
@@ -1556,8 +1568,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       await sleep(300);
     }
     setStatus(st, `—— 下架完成：成功 ${okN} 条 / 失败 ${failN} 条 ——`);
-    if (_nonMin.some((x) => !isIgnored(x))) {
-      log(`仍有 ${_nonMin.filter((x) => !isIgnored(x)).length} 条未处理（失败/未勾选），可勾选后再次下架或重挂。`);
+    if (_nonMin.some((x) => !isIgnored(x, 'sell'))) {
+      log(`仍有 ${_nonMin.filter((x) => !isIgnored(x, 'sell')).length} 条未处理（失败/未勾选），可勾选后再次下架或重挂。`);
       renderCheapList();
       return;
     }
@@ -3509,7 +3521,7 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
       if (st) st.textContent = `▶ 开始重挂 ${targets.length} 条：先下架旧求购，再按最高求购价 ${x >= 0 ? '+' : ''}${x} 发布…`;
       for (let i = 0; i < targets.length; i++) {
         const it = targets[i];
-        if (isIgnored(it)) { if (st) st.textContent = `${i + 1}/${targets.length} ⊘ ${label(it)} 已忽略，跳过`; _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id)); _maxChecked.delete(String(it.id)); continue; }
+        if (isIgnored(it, 'buy')) { if (st) st.textContent = `${i + 1}/${targets.length} ⊘ ${label(it)} 已忽略，跳过`; _nonMax = _nonMax.filter((x) => String(x.id) !== String(it.id)); _maxChecked.delete(String(it.id)); continue; }
         // 1) 下架旧求购单
         const del = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
         if (!(del && del.ok && del.status === 200)) {
@@ -3537,7 +3549,7 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
       if (st) st.textContent = `—— 重挂完成：成功 ${okN} / 失败 ${failN} ——`;
       // 仍有未处理（未勾选 / 失败 / 忽略跳过）的非最高价求购时，保留列表与按钮，便于继续逐条处理；
       // 仅剩已忽略项视作处理完毕，切回「最高价检测」。
-      const remaining = _nonMax.filter((x) => !isIgnored(x));
+    const remaining = _nonMax.filter((x) => !isIgnored(x, 'buy'));
       if (remaining.length) {
         if (st) st.textContent = `仍有 ${remaining.length} 条未处理（勾选后可继续重挂/下架）。`;
         renderMaxList();

@@ -4,6 +4,15 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.4.0] - 2026-11-11
+
+### 改进：价格检测「忽略」按挂单/求购两侧隔离
+- `scripts/一键市场.js`：忽略状态由单套拆为**挂单（sell）与求购（buy）两套互不相通**的集合，避免在求购侧忽略某鱼后，挂单侧同一鱼也被跳过（反之亦然）。
+  - 永久忽略拆为两个存储键：`r1cm-sell-perm-ignored`（挂单）与 `r1cm-buy-perm-ignored`（求购）；本次扫描忽略拆为 `_sellSessionIgnored` / `_buySessionIgnored`。
+  - `isIgnored(item, side)` 新增 `side` 参数（`'sell'` / `'buy'`），`renderIgnoreList(list, listId, priceOf, side)` 同理；最低价检测、一键重挂/下架、最高价检测、一键下架/重挂全部按各自侧判定。
+  - `loadPermIgnored(key)` / `savePermIgnored(key, set)` 改为显式传键，求购与挂单各自读写，不互相覆盖。
+- 注意：旧的 `r1cm-perm-ignored` 键不再读取，升级后需重新设置一次永久忽略项。
+
 ## [v2.3.2] - 2026-11-11
 
 ### 修复：v2.3.1 引入的 `ReferenceError`（ck / lvlTxt 未定义）
