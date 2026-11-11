@@ -3148,13 +3148,9 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
           '&fishBiome=' + encodeURIComponent(it.biomeId);
         const star = mset && mset.has(it.fishId) ? '*' : '';
         const linkColor = star ? '#4aa3ff' : '#d4a520';
-        const price = useBid ? (it.bid == null ? 0 : it.bid) : (it.ask == null ? null : it.ask);
-        const priceColor = useBid ? '#9b59b6' : '#2f9e44';
-        const ck = checkedBoxes.has(it.fishId) ? ' checked' : '';
-        // 专精鱼：括号外直接追加当前专精等级 LV{n}
-        const lvlTxt = star && lvlMap.has(it.fishId) ? ` LV${lvlMap.get(it.fishId)}` : '';
-        const priceTxt = useBid ? ((myBuy.has(it.fishId) ? '已求' : '求') + ':' + fmtGold(price)) : fmtGold(price);
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #2a2a30;">
+        const askTxt = it.ask == null ? '—' : fmtGold(it.ask);
+        const bidTxt = it.bid == null ? '—' : fmtGold(it.bid);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #1c1c20;">
         <span style="font-size:12px;color:#d4a520;">#${idx + 1}</span>
         <input type="checkbox" class="rlb-check" data-fid="${escapeHtml(it.fishId)}"${ck}
            style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#2f9e44;margin:0;cursor:pointer;flex:0 0 14px;align-self:center;" title="勾选后可按该鱼求购价批量发布求购"/>
@@ -3162,8 +3158,11 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
            style="flex:1;color:${linkColor};text-decoration:underline;font-size:12px;white-space:normal;word-break:break-all;cursor:pointer;display:block;">${escapeHtml(it.mapTag)} ${escapeHtml(pure)}（${star}${escapeHtml(objBargainRarityName(it.rarity))}）${escapeHtml(lvlTxt)}</span>
         <span class="rlb-bidprice" data-fid="${escapeHtml(it.fishId)}" data-bid="${it.bid == null ? 0 : it.bid}"
            data-name="${escapeHtml(pure)}"
-           style="font-size:12px;color:${priceColor};font-weight:bold;white-space:nowrap;margin-left:6px;cursor:pointer;text-decoration:underline;padding:2px 4px;border-radius:4px;"
-           title="点击设置求购价并发求购单">${priceTxt}</span>
+           style="font-size:12px;white-space:nowrap;margin-left:6px;cursor:pointer;padding:2px 4px;border-radius:4px;display:flex;flex-direction:column;gap:2px;align-items:flex-end;"
+           title="求=最高求购价；售=市场最低卖价（点击设置求购价并发求购单）">
+          <span style="color:#9b59b6;font-weight:bold;">${myBuy.has(it.fishId) ? '已求' : '求'}:${bidTxt}</span>
+          <span style="color:#2f9e44;font-weight:bold;">售:${askTxt}</span>
+        </span>
       </div>`;
       }).join('');
       listBox.innerHTML = html;
@@ -3428,13 +3427,12 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
           '&fishBiome=' + encodeURIComponent(it.biomeId || '');
         const star = mset && mset.has(it.fishId) ? '*' : '';
         const linkColor = star ? '#4aa3ff' : '#d4a520';
-        const price = useBid ? (it.bid == null ? 0 : it.bid) : (it.ask == null ? null : it.ask);
-        const priceColor = useBid ? '#9b59b6' : '#2f9e44';
         const ck = checkedBoxes.has(it.fishId) ? ' checked' : '';
         // 专精鱼：括号外直接追加当前专精等级 LV{n}
         const lvlTxt = star && lvlMap.has(it.fishId) ? ` LV${lvlMap.get(it.fishId)}` : '';
-        const priceTxt = useBid ? ((myBuy.has(it.fishId) ? '已求' : '求') + ':' + fmtGold(price)) : fmtGold(price);
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #2a2a30;">
+        const askTxt = it.ask == null ? '—' : fmtGold(it.ask);
+        const bidTxt = it.bid == null ? '—' : fmtGold(it.bid);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #1c1c20;">
         <span style="font-size:12px;color:#d4a520;">#${idx + 1}</span>
         <input type="checkbox" class="rlb-check" data-fid="${escapeHtml(it.fishId)}"${ck}
            style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#2f9e44;margin:0;cursor:pointer;flex:0 0 14px;align-self:center;" title="勾选后可按该鱼求购价批量发布求购"/>
@@ -3442,8 +3440,11 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
            style="flex:1;color:${linkColor};text-decoration:underline;font-size:12px;white-space:normal;word-break:break-all;cursor:pointer;display:block;">${escapeHtml(it.mapTag || '')} ${escapeHtml(pure)}（${star}${escapeHtml(objBargainRarityName(it.rarity))}）${escapeHtml(lvlTxt)}</span>
         <span class="rlb-bidprice" data-fid="${escapeHtml(it.fishId)}" data-bid="${it.bid == null ? 0 : it.bid}"
            data-name="${escapeHtml(pure)}"
-           style="font-size:12px;color:${priceColor};font-weight:bold;white-space:nowrap;margin-left:6px;cursor:pointer;text-decoration:underline;padding:2px 4px;border-radius:4px;"
-           title="点击设置求购价并发求购单">${priceTxt}</span>
+           style="font-size:12px;white-space:nowrap;margin-left:6px;cursor:pointer;padding:2px 4px;border-radius:4px;display:flex;flex-direction:column;gap:2px;align-items:flex-end;"
+           title="求=最高求购价；售=市场最低卖价（点击设置求购价并发求购单）">
+          <span style="color:#9b59b6;font-weight:bold;">${myBuy.has(it.fishId) ? '已求' : '求'}:${bidTxt}</span>
+          <span style="color:#2f9e44;font-weight:bold;">售:${askTxt}</span>
+        </span>
       </div>`;
       }).join('');
       listBox.querySelectorAll('.rlb-check').forEach((c) => {
