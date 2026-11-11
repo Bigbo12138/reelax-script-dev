@@ -4,6 +4,24 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.3.0] - 2026-11-09
+
+### 新功能：捡漏列表可排序（售价 / 求购价 / 地图等级 / 品级）
+- `scripts/一键市场.js`（新增 `sortBargainRows` / `mapLevelOf` / `rarityRankOf` / `setSortDir`）：排序类别下拉 `rlb-sort`（`ask` 售价 / `bid` 求购价 / `map` 地图等级 / `rarity` 品级）+ 方向按钮 `rlb-sort-dir`（点击切换 ↑/↓）；空价格无论升降序都排在末尾，同值按售价升序兜底保证稳定排序。
+- `scripts/一键市场.js`：捡漏面板状态栏与排序控件同排显示；切换类别或方向时若已有扫描结果则立即重排（无需重扫）；`sortKey`/`sortDir` 随捡漏设置持久化（`saveBargainCfg`/`restoreBargainCfg`），刷新页面/重开面板后保持。
+- 原先两处写死的 `visible.sort(...)`（求购列表、捡漏列表）统一改用 `sortBargainRows`。
+
+### 修复：「一键最低价挂单」误判无在售 + 盘口结构解析错误
+- `scripts/一键市场.js`（一键最低价挂单）：原先直接读 `ob.data.sellLevels`，但 `getJSON` 返回的外层是 `{id,status,ok,data:{...,sellLevels}}`，真实盘口在 `ob.data.data`，导致**永远判定为「无在售」而跳过所有鱼**。改为统一走 `fetchOrderBook()` + `lowestAskFromBook()` 解析。
+- `scripts/一键市场.js`（`lowestAskFromBook`）：不再依赖服务端档位排序，改为遍历 `sellLevels`/`sellOrders` 取所有有效正价并求 `Math.min`，过滤非有限值，规避乱序导致的高估卖价。
+- 盘口拉取失败（超时/限流/非200）时记入 `failed` 并提示「稍后重扫」，绝不当作「无在售」跳过。
+
+### 界面：复选框在窄容器中不再被压扁
+- 捡漏/求购列表、专精复选框等多处 `checkbox` 补充 `min-width/min-height:14px`、`box-sizing:border-box`、`flex:0 0 14px`、`align-self:center`，修复 flex 布局下被挤压变形的问题；品级勾选区补 `row-gap:8px` 避免换行贴太紧。
+
+### 其它
+- 恢复上次扫描的提示文案去掉「（30 分钟内有效）」（缓存实际不受此限制）。
+
 ## [v2.2.1] - 2026-11-05
 
 ### 修复：一键市场「修改求购价 / 修改在售价」拉单失败被当成「无对手」而误判

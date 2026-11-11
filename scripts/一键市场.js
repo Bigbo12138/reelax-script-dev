@@ -172,6 +172,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         adjust: getVal('rlb-bid-adjust', 1),
         qty: getVal('rlb-bid-qty', 1),
         masterymax: getCb('rlb-bid-masterymax'),
+        sortKey: (el('rlb-sort') ? el('rlb-sort').value : 'ask'),
+        sortDir: (el('rlb-sort-dir') ? (el('rlb-sort-dir').getAttribute('data-dir') || 'asc') : 'asc'),
       }));
     } catch (_e) {}
   }
@@ -197,6 +199,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     setVal('rlb-bid-adjust', o.adjust);
     setVal('rlb-bid-qty', o.qty);
     setCb('rlb-bid-masterymax', o.masterymax);
+    if (o.sortKey && el('rlb-sort')) el('rlb-sort').value = o.sortKey;
+    if (o.sortDir && el('rlb-sort-dir')) setSortDir(o.sortDir);
   }
 
   // 分页拉取「我的鱼挂单」全部页（/api/market/me/orders 用 cursor 翻页，limit 每页上限 100）
@@ -335,7 +339,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         </select>
       </div>
       <div style="font-size:13px;margin-bottom:4px;">品级（勾选的才会挂单）</div>
-      <div style="display:flex;flex-wrap:wrap;margin-bottom:10px;">${rarChips}</div>
+      <div style="display:flex;flex-wrap:wrap;row-gap:8px;margin-bottom:10px;">${rarChips}</div>
       <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-start;">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;height:17px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">单个鱼数量 ≥</div>
@@ -466,6 +470,23 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       }
       autoSaveBargain();
     });
+    // 排序类别切换：已扫描出列表则立即按新规则重排
+    const sortKeyEl = el('rlb-sort');
+    if (sortKeyEl) sortKeyEl.addEventListener('change', () => {
+      if (bargainState && bargainState.sorted.length && bargainState.render) bargainState.render();
+      autoSaveBargain();
+    });
+    // 排序方向按钮：点击切换升/降序（箭头 ↑/↓），并重排
+    const sortDirBtn = el('rlb-sort-dir');
+    if (sortDirBtn) {
+      sortDirBtn.addEventListener('click', () => {
+        const cur = sortDirBtn.getAttribute('data-dir') || 'asc';
+        setSortDir(cur === 'asc' ? 'desc' : 'asc');
+        if (bargainState && bargainState.sorted.length && bargainState.render) bargainState.render();
+        autoSaveBargain();
+      });
+    }
+    setSortDir(sortDirBtn ? (sortDirBtn.getAttribute('data-dir') || 'asc') : 'asc');
     // 面板可拖动（改进：整条头栏可拖、防选中、阈值区分点击/拖动、drag 反馈、限制在视口内）
     let dragging = false, movedDrag = false, ox = 0, oy = 0, sx = 0, sy = 0;
     const dragBar = panel.querySelector('div:nth-child(1)') || panel;
@@ -630,11 +651,17 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const f = candidates[i];
       try {
         // 1) 拉盘口拿最低卖价，算出挂单价（先算价，满足门槛才去动旧单，避免为跳过的鱼白白下架）
-        const ob = await getJSON('/api/market/fish/' + encodeURIComponent(f.fishId) + '/order-book');
-        let ask = null;
-        if (ob.ok && ob.data && Array.isArray(ob.data.sellLevels) && ob.data.sellLevels.length) {
-          ask = ob.data.sellLevels[0].unitPrice;
+        // 注意：getJSON 返回的 ob.data 是外层包装（{id,status,ok,data:{...,sellLevels}}），
+        // 真实盘口在 ob.data.data（或兼容 sellOrders 结构）→ 统一用 lowestAskFromBook 解析，避免误判「无在售」
+        const fetched = await fetchOrderBook(f.fishId);
+        if (!fetched.ok) {
+          // 拉取失败（超时/限流/非200）：记为异常，绝不当作「无在售」而跳过该鱼
+          failed.push({ f, why: '拉取盘口失败:' + (fetched.error || 'fail') });
+          log(`⚠ ${f.name}(${f.fishId}) 拉取盘口失败（${fetched.error || 'fail'}），稍后重扫`);
+          await sleep(200);
+          continue;
         }
+        const ask = lowestAskFromBook(fetched.ob);
         if (ask == null) { skipped.push({ f, why: '无在售盘口(ask)' }); log(`↪ ${f.name}(${f.fishId}) 跳过：无市场最低卖价`); await sleep(150); continue; }
         const limitPrice = Math.max(1, Math.round(ask + c.adj)); // ±正负金额（负=降价更易成）
         // 1.5) 单鱼挂牌价 ≥ 门槛：实际挂单价低于设置价格则跳过挂单（不碰旧单）
@@ -793,21 +820,17 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     return rarTag + prefix + pure;
   }
 
-  // 从 order-book 解析市场最低卖价（兼容 sellLevels / sellOrders 两种结构）
+  // 从 order-book 解析市场最低卖价（兼容 sellLevels / sellOrders 两种结构；不依赖服务端排序）
   function lowestAskFromBook(ob) {
     if (!(ob && ob.ok && ob.data)) return null;
     const d = (ob.data && ob.data.data && typeof ob.data.data === 'object') ? ob.data.data : ob.data;
-    if (d && Array.isArray(d.sellLevels) && d.sellLevels.length) {
-      return d.sellLevels[0].unitPrice; // 卖价档最低
-    }
-    if (d && Array.isArray(d.sellOrders) && d.sellOrders.length) {
-      let m = null;
-      for (const so of d.sellOrders) {
-        if (so && typeof so.limitUnitPrice === 'number') m = (m == null ? so.limitUnitPrice : Math.min(m, so.limitUnitPrice));
-      }
-      return m;
-    }
-    return null;
+    let prices = null;
+    if (d && Array.isArray(d.sellLevels) && d.sellLevels.length) prices = d.sellLevels.map((l) => Number(l && l.unitPrice));
+    else if (d && Array.isArray(d.sellOrders) && d.sellOrders.length) prices = d.sellOrders.map((o) => Number(o && o.limitUnitPrice));
+    if (!prices) return null;
+    prices = prices.filter((n) => Number.isFinite(n) && n > 0);
+    if (!prices.length) return null;
+    return Math.min.apply(null, prices);
   }
 
   // 从 order-book 解析最高求购价（buyLevels 最大档；兼容 buyOrders 结构），无求购返回 null
@@ -925,7 +948,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       }
       return `<div data-id="${idStr}" style="padding:5px 4px;border-bottom:1px solid #2a2a30;font-size:12px;color:#d0d0d0;${rowStyle}">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-          <input type="checkbox" class="r1cm-min-check" data-id="${idStr}"${ck}${dis} style="width:14px;height:14px;accent-color:#2f9e44;margin:0;cursor:pointer;" title="勾选后可一键重挂"/>
+          <input type="checkbox" class="r1cm-min-check" data-id="${idStr}"${ck}${dis} style="width:14px;height:14px;accent-color:#2f9e44;margin:0;cursor:pointer;flex:0 0 14px;align-self:center;" title="勾选后可一键重挂"/>
           <span class="rlb-link" data-url="${escapeHtml(linkUrl)}" title="跳到市场查看 ${escapeHtml(pureRaw)}"
             style="flex:1;color:#4fc3f7;font-weight:bold;text-decoration:underline;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;display:block;">${k}${ignTag}</span>
           <span style="font-size:12px;color:#2e7d32;font-weight:bold;white-space:nowrap;margin-left:6px;" title="市场最低卖价">最低 ${fmtGold(it.lowest)}</span>
@@ -1594,16 +1617,27 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       </div>
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#c4b5fd;cursor:pointer;user-select:none;">
-          <input type="checkbox" id="rlb-tab-mastery" style="width:14px;height:14px;accent-color:#8b5cf6;cursor:pointer;">
+          <input type="checkbox" id="rlb-tab-mastery" style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#8b5cf6;cursor:pointer;flex:0 0 14px;align-self:center;">
           仅拉取专精鱼
         </label>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#c4b5fd;cursor:pointer;user-select:none;">
-          <input type="checkbox" id="rlb-tab-usebid" style="width:14px;height:14px;accent-color:#2f9e44;cursor:pointer;">
+          <input type="checkbox" id="rlb-tab-usebid" style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#2f9e44;cursor:pointer;flex:0 0 14px;align-self:center;">
           求购价
         </label>
       </div>
-      <div id="rlb-status" style="font-size:12px;color:#aaa;margin-bottom:6px;"></div>
-      <div id="rlb-list" style="max-height:300px;overflow:auto;background:#17171b;border:1px solid #3a3a42;border-radius:6px;padding:6px;font-size:12px;"></div>
+      <div style="position:relative;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;">
+          <div id="rlb-status" style="font-size:12px;color:#aaa;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+          <button id="rlb-sort-dir" type="button" data-dir="asc" title="点击切换升/降序" style="padding:0 4px;font-size:14px;line-height:1;border:none;background:transparent;color:#c4b5fd;cursor:pointer;user-select:none;flex-shrink:0;">↑</button>
+          <select id="rlb-sort" title="排序类别" style="padding:1px 2px;font-size:11px;border:1px solid #4a4a52;border-radius:5px;background:#2a2a30;color:#e8e8e8;cursor:pointer;flex-shrink:0;">
+            <option value="ask">售价</option>
+            <option value="bid">求购价</option>
+            <option value="map">地图等级</option>
+            <option value="rarity">品级</option>
+          </select>
+        </div>
+        <div id="rlb-list" style="max-height:300px;overflow:auto;background:#17171b;border:1px solid #3a3a42;border-radius:6px;padding:6px;font-size:12px;"></div>
+      </div>
 <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:#aaa;flex-wrap:wrap;">
         <span style="white-space:nowrap;">快速±</span>
         <input id="rlb-bid-adjust" type="number" step="1" value="1" title="在最高求购价上 ±此数" style="width:64px;padding:4px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;"/>
@@ -1611,7 +1645,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         <span style="white-space:nowrap;margin-left:8px;">每单数量</span>
         <input id="rlb-bid-qty" type="number" min="1" step="1" value="1" style="width:64px;padding:4px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;"/>
         <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:#4aa3ff;white-space:nowrap;">
-          <input id="rlb-bid-masterymax" type="checkbox" style="width:14px;height:14px;accent-color:#4aa3ff;cursor:pointer;"/>
+          <input id="rlb-bid-masterymax" type="checkbox" style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#4aa3ff;cursor:pointer;flex:0 0 14px;align-self:center;"/>
           专精鱼用当前最大值
         </label>
       </div>
@@ -1720,6 +1754,52 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const mapTag = p.length >= 2 ? ('[B' + (num || '') + ']') : '';
     return { biomeId, rarity, mapTag };
   }
+  // 地图等级（数字）：优先取 biomeId 中的 B 编号（b_007 → 7），其次取 mapTag
+  function mapLevelOf(it) {
+    const bid = (it && it.biomeId) || '';
+    const m = /^b_(\d+)/i.exec(bid);
+    if (m) return Number(m[1]);
+    const t = /B(\d+)/i.exec((it && it.mapTag) || '');
+    if (t) return Number(t[1]);
+    const p = parseFishId(it && it.fishId);
+    const m2 = /^b_(\d+)/i.exec(p.biomeId);
+    return m2 ? Number(m2[1]) : Infinity;
+  }
+  function rarityRankOf(rarity) {
+    const i = RARITY_ORDER.indexOf(rarity);
+    return i < 0 ? 999 : i;
+  }
+  // 捡漏列表排序：key ∈ ask(售价)/bid(求购价)/map(地图等级)/rarity(品级)；dir ∈ asc/desc
+  // 空价格始终排在末尾（无论升降序）；同值按售价升序兜底保证稳定。
+  function sortBargainRows(rows, key, dir) {
+    const sign = (dir === 'desc') ? -1 : 1;
+    const nullBig = (dir === 'desc') ? -Infinity : Infinity;
+    const priceOf = (it, k) => {
+      const v = (k === 'bid') ? it.bid : it.ask;
+      return (v == null || !Number.isFinite(Number(v))) ? nullBig : Number(v);
+    };
+    return rows.slice().sort((a, b) => {
+      let av, bv;
+      if (key === 'bid' || key === 'ask') { av = priceOf(a, key); bv = priceOf(b, key); }
+      else if (key === 'map') { av = mapLevelOf(a); bv = mapLevelOf(b); }
+      else if (key === 'rarity') { av = rarityRankOf(a.rarity); bv = rarityRankOf(b.rarity); }
+      else { av = priceOf(a, 'ask'); bv = priceOf(b, 'ask'); }
+      if (av < bv) return -1 * sign;
+      if (av > bv) return 1 * sign;
+      // 同值：按售价升序兜底（空价仍靠后）
+      return priceOf(a, 'ask') - priceOf(b, 'ask');
+    });
+  }
+  // 设置排序方向按钮：data-dir=asc/desc，文字显示 ↑/↓
+  function setSortDir(dir) {
+    const b = el('rlb-sort-dir');
+    if (!b) return;
+    const d = (dir === 'desc') ? 'desc' : 'asc';
+    b.setAttribute('data-dir', d);
+    b.textContent = (d === 'desc') ? '↓' : '↑';
+    b.title = '当前：' + (d === 'desc' ? '降序' : '升序') + '（点击切换）';
+  }
+
 
   // 鱼种硬编码表 [fishId, name] —— 由 /api/fishpedia 一次性采集（共 990 种）。游戏更新鱼种后手动更新。
   const HARD_FISH = [
@@ -3059,12 +3139,10 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       // 这样勾选/取消勾选能直接在已拉取的单子中切换，无需重新扫描。
       const nurMon = el('rlb-tab-mastery') ? el('rlb-tab-mastery').checked : false;
       const visible = (nurMon && mset) ? sorted.filter((it) => mset.has(it.fishId)) : sorted;
-      visible.sort((a, b) => {
-        const pa = useBid ? (a.bid == null ? -1 : a.bid) : (a.ask == null ? Infinity : a.ask);
-        const pb = useBid ? (b.bid == null ? -1 : b.bid) : (b.ask == null ? Infinity : b.ask);
-        return pa - pb;
-      });
-      const html = visible.map((it, idx) => {
+      const sortKey = el('rlb-sort') ? el('rlb-sort').value : 'ask';
+      const sortDir = el('rlb-sort-dir') ? (el('rlb-sort-dir').getAttribute('data-dir') || 'asc') : 'asc';
+      const ordered = sortBargainRows(visible, sortKey, sortDir);
+      const html = ordered.map((it, idx) => {
         const pure = stripBracket(it.name);
         const url = 'https://reelax.cn/market?fishSearch=' + encodeURIComponent(pure) +
           '&fishBiome=' + encodeURIComponent(it.biomeId);
@@ -3079,7 +3157,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #2a2a30;">
         <span style="font-size:12px;color:#d4a520;">#${idx + 1}</span>
         <input type="checkbox" class="rlb-check" data-fid="${escapeHtml(it.fishId)}"${ck}
-           style="width:14px;height:14px;accent-color:#2f9e44;margin:0 6px;cursor:pointer;" title="勾选后可按该鱼求购价批量发布求购"/>
+           style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#2f9e44;margin:0;cursor:pointer;flex:0 0 14px;align-self:center;" title="勾选后可按该鱼求购价批量发布求购"/>
         <span class="rlb-link" data-url="${escapeHtml(url)}" title="跳到市场查看 ${pure}${star ? '（专精鱼）' : ''}"
            style="flex:1;color:${linkColor};text-decoration:underline;font-size:12px;white-space:normal;word-break:break-all;cursor:pointer;display:block;">${escapeHtml(it.mapTag)} ${escapeHtml(pure)}（${star}${escapeHtml(objBargainRarityName(it.rarity))}）${escapeHtml(lvlTxt)}</span>
         <span class="rlb-bidprice" data-fid="${escapeHtml(it.fishId)}" data-bid="${it.bid == null ? 0 : it.bid}"
@@ -3276,7 +3354,7 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
         const need = rem.get(it.fishId);
         if (need == null) { qtyLine.textContent = '非专精鱼（默认求购 1 条）'; return; }
         qtyLine.innerHTML = `<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:#4aa3ff;">
-            <input type="checkbox" data-mastery-max style="width:14px;height:14px;accent-color:#4aa3ff;cursor:pointer;"/>
+            <input type="checkbox" data-mastery-max style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#4aa3ff;cursor:pointer;flex:0 0 14px;align-self:center;"/>
             当前专精最大值（还差 ${need} 条）
           </label>`;
         const maxCk = qtyLine.querySelector('[data-mastery-max]');
@@ -3341,12 +3419,10 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
       // 「仅拉取专精鱼」为视图层筛选，从不改动 sorted（已恢复的单子可直接切换筛/放回）
       const nurMon = el('rlb-tab-mastery') ? el('rlb-tab-mastery').checked : false;
       const visible = (nurMon && mset) ? sorted.filter((it) => mset.has(it.fishId)) : sorted;
-      visible.sort((a, b) => {
-        const pa = useBid ? (a.bid == null ? -1 : a.bid) : (a.ask == null ? Infinity : a.ask);
-        const pb = useBid ? (b.bid == null ? -1 : b.bid) : (b.ask == null ? Infinity : b.ask);
-        return pa - pb;
-      });
-      listBox.innerHTML = visible.map((it, idx) => {
+      const sortKey = el('rlb-sort') ? el('rlb-sort').value : 'ask';
+      const sortDir = el('rlb-sort-dir') ? (el('rlb-sort-dir').getAttribute('data-dir') || 'asc') : 'asc';
+      const ordered = sortBargainRows(visible, sortKey, sortDir);
+      listBox.innerHTML = ordered.map((it, idx) => {
         const pure = stripBracket(it.name);
         const url = 'https://reelax.cn/market?fishSearch=' + encodeURIComponent(pure) +
           '&fishBiome=' + encodeURIComponent(it.biomeId || '');
@@ -3361,7 +3437,7 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px;border-bottom:1px solid #2a2a30;">
         <span style="font-size:12px;color:#d4a520;">#${idx + 1}</span>
         <input type="checkbox" class="rlb-check" data-fid="${escapeHtml(it.fishId)}"${ck}
-           style="width:14px;height:14px;accent-color:#2f9e44;margin:0 6px;cursor:pointer;" title="勾选后可按该鱼求购价批量发布求购"/>
+           style="width:14px;height:14px;min-width:14px;min-height:14px;box-sizing:border-box;accent-color:#2f9e44;margin:0;cursor:pointer;flex:0 0 14px;align-self:center;" title="勾选后可按该鱼求购价批量发布求购"/>
         <span class="rlb-link" data-url="${escapeHtml(url)}" title="跳到市场查看 ${pure}${star ? '（专精鱼）' : ''}"
            style="flex:1;color:${linkColor};text-decoration:underline;font-size:12px;white-space:normal;word-break:break-all;cursor:pointer;display:block;">${escapeHtml(it.mapTag || '')} ${escapeHtml(pure)}（${star}${escapeHtml(objBargainRarityName(it.rarity))}）${escapeHtml(lvlTxt)}</span>
         <span class="rlb-bidprice" data-fid="${escapeHtml(it.fishId)}" data-bid="${it.bid == null ? 0 : it.bid}"
@@ -3396,7 +3472,7 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
     bargainState = { sorted: sorted, checked: checkedBoxes, render: render, masterySet: mset };
     if (el('rlb-tab-rarity')) el('rlb-tab-rarity').value = rarity;
     render(); // 先秒出本地缓存列表（含持久化的专精 * 与 LV）
-    if (st) st.textContent = `已恢复上次扫描：共 ${sorted.length} 种「${rarityName}」鱼（30 分钟内有效）`;
+    if (st) st.textContent = `已恢复上次扫描：共 ${sorted.length} 种「${rarityName}」鱼`;
     // 后台异步补齐最新数据：专精集合 / 专精等级 / 我的求购，各自就绪即各自重渲染
     // （不阻塞列表显示，也不互相拖慢 LV / 已求）。
     (async () => {
