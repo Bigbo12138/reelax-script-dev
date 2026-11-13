@@ -1804,6 +1804,31 @@
     return tier ? tier.name : baitId;
   }
 
+  // 自动补充购买鱼饵：库存为 0 时按批次购买，返回是否购买成功
+  const BAIT_AUTOBUY_QTY = 100;
+  async function purchaseBait(baitId, quantity) {
+    const qty = Math.max(1, Math.round(Number(quantity) || BAIT_AUTOBUY_QTY));
+    try {
+      // 优先使用官方 API（若暴露购买方法），否则回退 /api 直调
+      if (state.gameApiReady && state.gameApi && state.gameApi.fishing
+        && typeof state.gameApi.fishing.purchaseBait === 'function') {
+        const r = await state.gameApi.fishing.purchaseBait(baitId, { quantity: qty });
+        if (r) return true;
+      }
+    } catch (e) {
+      if (e && e.code !== 'NOT_READY') {
+        console.warn('[AutoMap] purchaseBait(gameApi) 失败，回退 /api 直调:', e.message);
+      }
+    }
+    try {
+      await api(`/api/baits/${baitId}/purchase`, { method: 'POST', body: { quantity: qty } });
+      return true;
+    } catch (e) {
+      console.warn('[AutoMap] purchaseBait(/api) 失败:', e.message);
+      return false;
+    }
+  }
+
   // 检查并切换鱼饵（根据优先级类型配置）
   async function checkAndSwitchBait(priorityType, data, isAfterBiomeSwitch, targetBiomeId) {
     if (!priorityType) return false;
@@ -1867,11 +1892,17 @@
 
     console.log('[AutoMap] 鱼饵需要切换:', state.currentBaitId, '->', configuredBaitId);
 
-    // 检查鱼饵是否有库存
+    // 检查鱼饵是否有库存；库存为 0 时先尝试自动购买，买不到再跳过切换
     const baitData = data.baits?.find(b => b.id === configuredBaitId);
     if (baitData && !baitData.isUnlimited && (baitData.quantity ?? 0) <= 0) {
-      log(`鱼饵 ${getBaitName(configuredBaitId)} 库存为0，跳过切换`, 'warn');
-      return false;
+      const baitName = getBaitName(configuredBaitId);
+      log(`鱼饵 ${baitName} 库存为0，尝试自动购买 ${BAIT_AUTOBUY_QTY} 个…`, 'warn');
+      const bought = await purchaseBait(configuredBaitId, BAIT_AUTOBUY_QTY);
+      if (!bought) {
+        log(`鱼饵 ${baitName} 自动购买失败（金币不足或接口异常），跳过切换`, 'warn');
+        return false;
+      }
+      log(`鱼饵 ${baitName} 已自动购买 ${BAIT_AUTOBUY_QTY} 个，继续切换`, 'action');
     }
 
     try {
