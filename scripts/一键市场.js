@@ -5,8 +5,8 @@
 // @description  在背包「渔获」页的「锁定专精鱼」按钮后加「一键市场」按钮。点击后按你的设定
 //               （品级多选 / 单个鱼数量下限 / 市场最低卖价±金额）批量筛选背包鱼，并按该价格挂单出售。
 //               面板含「挂单」与「捡漏」两页签：捡漏可查某稀有度（奇异/奥秘）所有鱼的市场最低价并升序列出、点击跳转。
-//               非渔获页（钓鱼/市场等）显示左下角悬浮「捡漏」按钮。已整合「最低价检测」与「一键下架非最低价」为单一按钮：
-//               点检测扫完切为一键下架，下架完恢复；对已有挂单的鱼会先下架旧单再合并重挂一单；
+//               非渔获页（钓鱼/市场等）显示左下角悬浮「捡漏」按钮。已整合「最低价检测」与「一键下架勾选」为单一按钮：
+//               点检测扫完切为一键下架（非最低价默认全选），全部下架完才恢复；对已有挂单的鱼会先下架旧单再合并重挂一单；
 //               达到活动挂单数量上限（market/config，含服务端 activeOrderCount）时自动停止。
 // @match        https://reelax.cn/*
 // @run-at       document-idle
@@ -48,7 +48,14 @@
   }
   async function getJSON(path) {
     const r = await api(path, 'GET', null);
-    if (!r || !r.ok) return { ok: false, error: (r && r.error) || r && String(r.status) || 'http' };
+    if (!r || !r.ok) {
+      return {
+        ok: false,
+        status: r && r.status,
+        body: r && r.body,
+        error: (r && r.error) || (r && r.status != null ? String(r.status) : 'http'),
+      };
+    }
     try { return { ok: true, data: JSON.parse(r.body) }; }
     catch (e) { return { ok: false, error: 'parse' }; }
   }
@@ -203,27 +210,81 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     if (o.sortDir && el('rlb-sort-dir')) setSortDir(o.sortDir);
   }
 
-  // 分页拉取「我的鱼挂单」全部页（/api/market/me/orders 用 cursor 翻页，limit 每页上限 100）
-  // 返回 { ok, orders:[...], raw, error }；ok=false 时 error 携带首个失败信息
+  // 分页拉取「我的鱼挂单」（/api/market/me/orders，limit≤100，cursor 翻页）
+  // 只拉 status=active：否则会把大量历史单翻几十页 → 触发 orders-incomplete / 429。
+  // 返回 { ok, orders, incomplete?, error?, body? }；一页都拉不到才 ok=false。
   async function fetchMyFishOrders() {
     const all = [];
-    let cursor = null, firstErr = null;
-    for (let page = 0; page < 50; page++) { // 防御性上限，避免死循环
-      let path = '/api/market/me/orders?assetType=fish&limit=100';
-      if (cursor) path += '&cursor=' + encodeURIComponent(String(cursor));
-      const mine = await getJSON(path);
-      if (mine.ok && mine.data) {
-        const orders = Array.isArray(mine.data.orders) ? mine.data.orders : [];
-        all.push.apply(all, orders);
-        cursor = mine.data.nextCursor; // 服务端在同页返回的下一页游标；无则为 null 结束
-        if (!cursor) break;
-        await sleep(60);
-      } else {
-        if (!firstErr) firstErr = { error: mine.error, body: mine.body };
+    let cursor = null;
+    let lastErr = null;
+    const PAGE = 100;
+    const unwrap = (data) => {
+      if (!data || typeof data !== 'object') return {};
+      // 兼容 {orders,nextCursor} 与外层包装 {data:{orders,nextCursor}}
+      if (Array.isArray(data.orders) || data.nextCursor != null) return data;
+      if (data.data && typeof data.data === 'object' && (Array.isArray(data.data.orders) || data.data.nextCursor != null)) return data.data;
+      return data;
+    };
+    const normCursor = (c) => {
+      if (c == null || c === '') return null;
+      if (typeof c === 'object') return null; // 非法游标直接结束，避免 [object Object] 死翻页
+      const s = String(c);
+      if (!s || s === 'null' || s === 'undefined') return null;
+      return s;
+    };
+
+    for (let page = 0; page < 30; page++) {
+      // status=active：活动挂单通常远小于历史总量（上限约几十单）
+      let path = '/api/market/me/orders?assetType=fish&status=active&limit=' + PAGE;
+      if (cursor) path += '&cursor=' + encodeURIComponent(cursor);
+      let mine = null;
+      let pageOk = false;
+      for (let tryN = 0; tryN < 6; tryN++) {
+        mine = await getJSON(path);
+        if (mine && mine.ok && mine.data) { pageOk = true; break; }
+        if (isRateLimited(mine) && tryN < 5) {
+          const wait = 5000 + tryN * 3000; // 5s / 8s / 11s …
+          console.log(TAG, '拉取挂单遇限流(429)，等待 ' + (wait / 1000) + 's 后重试… page=' + (page + 1));
+          const st = el('r1cm-status') || el('rlb-status');
+          if (st) st.textContent = '⏳ 挂单接口限流(429)，' + (wait / 1000) + 's 后自动重试…';
+          await sleep(wait);
+          continue;
+        }
         break;
       }
+      if (!pageOk) {
+        lastErr = { error: (mine && mine.error) || 'page-fetch-failed', body: mine && mine.body };
+        break;
+      }
+      const payload = unwrap(mine.data);
+      const orders = Array.isArray(payload.orders) ? payload.orders : [];
+      all.push.apply(all, orders);
+      const next = normCursor(payload.nextCursor);
+      // 无游标 / 本页为空 / 不足一页 → 没有更多（与 monitor 翻页策略一致）
+      if (!next || !orders.length || orders.length < PAGE) {
+        cursor = null;
+        break;
+      }
+      cursor = next;
+      await sleep(350);
     }
-    return { ok: all.length > 0 || !firstErr, orders: all, raw: all, error: firstErr ? firstErr.error : undefined, body: firstErr ? firstErr.body : undefined };
+
+    // 一页都没有 → 硬失败
+    if (!all.length && lastErr) {
+      return { ok: false, orders: [], raw: [], error: lastErr.error, body: lastErr.body };
+    }
+    // 触顶仍有游标
+    const hitCap = !!cursor;
+    if (hitCap && !lastErr) lastErr = { error: 'orders-incomplete', body: 'stopped with nextCursor after ' + all.length + ' orders' };
+    // 已有部分数据：允许继续检测，带 incomplete 提示（避免一点 429 就整页不可用）
+    return {
+      ok: true,
+      orders: all,
+      raw: all,
+      incomplete: !!(lastErr || hitCap),
+      error: lastErr ? lastErr.error : undefined,
+      body: lastErr ? lastErr.body : undefined,
+    };
   }
   function saveBargainCache(rarity, sorted, myBuyIds) {
     try {
@@ -1272,14 +1333,16 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         }
         const two = bestTwoLevels(fetched.ob, 'buy');
         const highest = two.m1;
+        const myBidN = Number(myBid);
+        // 与卖单侧相同：盘口可能不含自己的单，已出价更高时用 >= 视为最高求购
         if (highest == null) {
           ok++;
-        } else if (myBid === highest) {
+        } else if (Number.isFinite(myBidN) && myBidN >= highest) {
           ok++;
           // 可议价：我为最高求购、存在次高档、且市场断层达阈值 → 建议改价
-          if (two.m2 != null) {
+          if (two.m2 != null && myBidN === highest) {
             const gapRatio = Math.abs(highest - two.m2) / Math.max(two.m2, 1);
-            if (gapRatio >= gapThreshold(myBid)) {
+            if (gapRatio >= gapThreshold(myBidN)) {
               _gapList.push({
                 id: (o.id || o.orderId), name, pure: stripBracket(String((o.asset.fish && o.asset.fish.name) || fid || '')),
                 fishId: fid, quantity: qty, side: 'buy',
@@ -1377,10 +1440,10 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       if (isCheckMode) {
         await onCheapCheck();
         // 扫出非最低价挂单 → 按钮切为一键下架；无则保持最低价检测
-        setCheapMode(_nonMin.length ? 'delist' : 'check');
+        setCheapMode(_nonMin.filter((x) => !isIgnored(x, 'sell')).length ? 'delist' : 'check');
       } else {
+        // 模式由 onDelistNonMin 按「是否还有未处理」自行切换，避免强制切回检测后误以为已清空
         await onDelistNonMin();
-        setCheapMode('check'); // 下架完成后恢复
       }
     } finally {
       if (btn) btn.disabled = false;
@@ -1402,8 +1465,15 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const mine = await fetchMyFishOrders();
     const orders = (mine.ok && Array.isArray(mine.orders)) ? mine.orders : null;
     if (!orders) {
-      setStatus(st, '❌ 读取挂单失败: ' + (mine.error || 'unknown') + (mine.body ? ' body:' + String(mine.body).slice(0, 150) : ''));
+      const why = String(mine.error || 'unknown');
+      const tip = (why === '429' || /429|限流|频繁/.test(why))
+        ? '❌ 读取挂单被限流(429)，已自动重试仍失败，请等 20 秒后再点「最低价检测」'
+        : ('❌ 读取挂单失败: ' + why + (mine.body ? ' body:' + String(mine.body).slice(0, 150) : ''));
+      setStatus(st, tip);
       return;
+    }
+    if (mine.incomplete) {
+      log('⚠️ 挂单列表可能不完整（' + (mine.error || 'incomplete') + '），先对已拉到的 ' + orders.length + ' 条检测');
     }
     const sells = orders.filter((o) => o && o.side === 'sell' && o.status === 'active'
       && o.asset && o.asset.fish && (o.remainingQuantity || 0) > 0);
@@ -1414,7 +1484,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const o = sells[i];
       const fid = o.asset.fish.fishId;
       const name = displayFishName(o);
-      const myPrice = o.limitUnitPrice;
+      const myPrice = Number(o.limitUnitPrice);
       const qty = o.remainingQuantity || 1;
       try {
         const fetched = await fetchOrderBook(fid);
@@ -1427,13 +1497,17 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         }
         const ob = fetched.ob;
         const lowest = lowestAskFromBook(ob);
+        // 判定「已是最低价」用 <= 而非 ===：
+        // 盘口若不含自己的挂单，你用 -1 金抢到真正最低后，盘口最低仍是别人的价，
+        // === 会永远判你「非最低」→ 勾选重挂后再检测又冒出来。我的价更低/持平都算最低。
         if (lowest == null) {
           ok++;
-        } else if (myPrice === lowest) {
+        } else if (Number.isFinite(myPrice) && myPrice <= lowest) {
           ok++;
           // 可议价：我为最低卖、存在次低档、且市场断层达阈值 → 建议改价
           const two = bestTwoLevels(ob, 'sell');
-          if (two.m2 != null) {
+          if (two.m2 != null && myPrice === lowest) {
+            // 仅在「挂价正好等于盘口可见最低」时按次低档抬价，避免自己已更低时被建议抬到别人价附近
             const gapRatio = Math.abs(lowest - two.m2) / Math.max(two.m2, 1);
             if (gapRatio >= gapThreshold(myPrice)) {
               _gapList.push({
@@ -1444,14 +1518,29 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
                 suggest: two.m2 - 1, // 次低档 -1：仍最低卖、更高价成交
               });
             }
+          } else if (two.m1 != null && myPrice < lowest) {
+            // 自己已低于盘口可见最低（常见于盘口不含本人单）：可提到 lowest-1 仍保持最优
+            const suggest = Math.max(1, lowest - 1);
+            if (suggest > myPrice) {
+              const gapRatio = (suggest - myPrice) / Math.max(myPrice, 1);
+              if (gapRatio >= gapThreshold(myPrice)) {
+                _gapList.push({
+                  id: (o.id || o.orderId), name,
+                  pure: stripBracket(String((o.asset.fish && o.asset.fish.name) || fid || '')),
+                  fishId: fid, quantity: qty, side: 'sell',
+                  m1: myPrice, m2: lowest, gapRatio,
+                  suggest,
+                });
+              }
+            }
           }
         } else {
           notMin++;
           const nmId = String(o.id || o.orderId);
-          // 与市场最低价的差距（比例）在「分档阈值 gapThreshold」内 → 默认勾选；超出则不勾选
+          // 默认全部勾选（「一键下架勾选」应对齐用户预期）；差距过大可手动取消勾选或点忽略
           const gapRatio = (myPrice - lowest) / Math.max(lowest, 1);
           _nonMin.push({ id: nmId, name, myPrice, lowest, gapRatio, fishId: fid, quantity: qty, pure: stripBracket(String((o.asset.fish && o.asset.fish.name) || fid || '')) });
-          if (gapRatio <= gapThreshold(myPrice)) _nonMinChecked.add(nmId);
+          _nonMinChecked.add(nmId);
         }
       } catch (e) {
         skipped++;
@@ -1466,7 +1555,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       const adj = Number(cfgNow.adj) || 0;
       const minPrice = Number(cfgNow.minPrice) || 0;
       const adjTxt = (adj >= 0 ? '+' : '') + adj;
-      log('💡 检测出 ' + _nonMin.length + ' 条非最低价挂单（见上方列表），勾选后点「勾选重挂（按设置挂单）」即可按门槛 [' + (minPrice > 0 ? fmtGold(minPrice) : '不限') + '] 与 ±[' + adjTxt + '] 统一重挂');
+      log('💡 检测出 ' + _nonMin.length + ' 条非最低价挂单（默认已全选），可直接「一键下架勾选」，或点「勾选重挂（按设置挂单）」按门槛 [' + (minPrice > 0 ? fmtGold(minPrice) : '不限') + '] 与 ±[' + adjTxt + '] 统一重挂');
     }
   }
 
@@ -1495,17 +1584,25 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         renderCheapList();
         continue;
       }
-      // 重挂价 = 市场最低卖价 ± 设置（负=更低更易成交），并遵守单鱼价格门槛
-      const limitPrice = Math.max(1, Math.round((it.lowest == null ? 0 : it.lowest) + adj));
+      // 1) 重挂前再拉盘口（我的单高于最低时不影响盘口最低）；先算价，不达标则不下架
+      let baseAsk = (it.lowest == null ? null : Number(it.lowest));
+      try {
+        const fresh = await fetchOrderBook(it.fishId);
+        if (fresh && fresh.ok) {
+          const live = lowestAskFromBook(fresh.ob);
+          if (live != null) baseAsk = live;
+        }
+      } catch (_e) { /* 用检测时的 lowest 兜底 */ }
+      const limitPrice = Math.max(1, Math.round((baseAsk == null ? 0 : baseAsk) + adj));
       if (minPrice > 0 && limitPrice < minPrice) {
         skipN++;
         _nonMinChecked.delete(String(it.id));
         renderCheapList();
-        setStatus(st, `重挂中 ${i + 1}/${targets.length} ｜ 成功 ${okN} / 失败 ${failN} / 跳过 ${skipN}`);
+        setStatus(st, `重挂中 ${i + 1}/${targets.length} ｜ 成功 ${okN} / 失败 ${failN} / 跳过 ${skipN}（低于挂牌价门槛，未下架）`);
         await sleep(200);
         continue;
       }
-      // 1) 下架旧单
+      // 2) 下架旧单
       let del = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
       if (!(del && del.ok && del.status === 200) && (await backoffIfRateLimited(del))) {
         del = await postJSON('/api/market/orders/' + encodeURIComponent(String(it.id)), 'DELETE', null);
@@ -1518,7 +1615,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
         await sleep(300);
         continue;
       }
-      // 2) 按设置价重挂；成功后从清单移除
+      // 3) 按设置价重挂；成功后从清单移除
       const r = await placeSellOrder(it.fishId, it.name, limitPrice, it.quantity);
       _nonMin = _nonMin.filter((x) => String(x.id) !== String(it.id));
       _nonMinChecked.delete(String(it.id));
@@ -1544,6 +1641,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const targets = _nonMin.filter((x) => _nonMinChecked.has(String(x.id)) && !isIgnored(x, 'sell'));
     if (!targets.length) {
       setStatus(st, 'ℹ️ 未勾选任何可下架的挂单（已忽略的不会下架）。请先在列表中勾选。');
+      setCheapMode(_nonMin.some((x) => !isIgnored(x, 'sell')) ? 'delist' : 'check');
       return;
     }
     setStatus(st, `▶ 准备下架 ${targets.length} 条非最低价卖单…`);
@@ -1568,14 +1666,19 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       await sleep(300);
     }
     setStatus(st, `—— 下架完成：成功 ${okN} 条 / 失败 ${failN} 条 ——`);
-    if (_nonMin.some((x) => !isIgnored(x, 'sell'))) {
-      log(`仍有 ${_nonMin.filter((x) => !isIgnored(x, 'sell')).length} 条未处理（失败/未勾选），可勾选后再次下架或重挂。`);
+    // 与最高价侧一致：仍有未处理（未勾选/失败）则保持列表与「一键下架勾选」，避免误以为已清空后再扫「又冒出一批」
+    const remaining = _nonMin.filter((x) => !isIgnored(x, 'sell'));
+    if (remaining.length) {
+      setStatus(st, `仍有 ${remaining.length} 条未处理（勾选后可继续「一键下架勾选」）。`);
+      log(`仍有 ${remaining.length} 条未处理（失败/未勾选），可勾选后再次下架或重挂。`);
       renderCheapList();
+      setCheapMode('delist');
       return;
     }
     _nonMin = [];
     _nonMinChecked = new Set();
     clearCheapList();
+    setCheapMode('check');
   }
 
   function safeErr(body, fallback) {
@@ -1587,10 +1690,14 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     return (fallback || 'http');
   }
 
-  // 判断响应是否为「操作过于频繁」类限流
+  // 判断响应是否为「操作过于频繁」类限流（含 HTTP 429）
   function isRateLimited(res) {
-    const txt = safeErr(res && res.body, res && res.error) || '';
-    return /过于频繁|操作太频繁|频率|稍后重试|限流|too (many|frequent)/i.test(txt);
+    if (!res) return false;
+    if (Number(res.status) === 429) return true;
+    const err = String(res.error || '');
+    if (err === '429' || /429/.test(err)) return true;
+    const txt = safeErr(res.body, res.error) || '';
+    return /过于频繁|操作太频繁|频率|稍后重试|限流|too (many|frequent)|rate.?limit/i.test(txt);
   }
 
   // 限流退避：命中限流则提示并停顿 5 秒，返回是否命中（供调用方决定重试/继续）

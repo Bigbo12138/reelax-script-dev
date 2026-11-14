@@ -43,7 +43,7 @@
   ];
   // 购买同一组后的冷却，避免反复刷新同一 buff
   const BUFF_COOLDOWN_MS = 25 * 60 * 1000;
-  const BUFF_POLL_MS = 5 * 60 * 1000;
+  const BUFF_POLL_MS = 1 * 60 * 1000;
   const BUFF_CFG_KEY = 'r1cm-buff-cfg-v1';
   // 全部 9 种天气（id → 中文名），供面板勾选「启用 buff 的天气」
   const WEATHER_LIST = [
