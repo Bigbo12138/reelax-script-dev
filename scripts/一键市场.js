@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Reelax 一键市场（批量挂单出售）
 // @namespace    reelax-oneclick-market
-// @version      1.4.0
+// @version      1.5.0
 // @description  在背包「渔获」页的「锁定专精鱼」按钮后加「一键市场」按钮。点击后按你的设定
 //               （品级多选 / 单个鱼数量下限 / 市场最低卖价±金额）批量筛选背包鱼，并按该价格挂单出售。
-//               面板含「挂单」与「捡漏」两页签：捡漏可查某稀有度（奇异/奥秘）所有鱼的市场最低价并升序列出、点击跳转。
+//               面板含「挂单」「捡漏」「倒鱼」三页签：捡漏可查某稀有度所有鱼的市场最低价并升序列出、点击跳转；
+//               倒鱼含买入/卖出：买入购买单+检测/开始买入；卖出卖出单+检测（最低售价>期望→提示挂最低-1；数量=背包全量）。
 //               非渔获页（钓鱼/市场等）显示左下角悬浮「捡漏」按钮。已整合「最低价检测」与「一键下架勾选」为单一按钮：
 //               点检测扫完切为一键下架（非最低价默认全选），全部下架完才恢复；对已有挂单的鱼会先下架旧单再合并重挂一单；
 //               达到活动挂单数量上限（market/config，含服务端 activeOrderCount）时自动停止。
@@ -93,6 +94,20 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function el(id) { return document.getElementById(id); }
   function fmtGold(n) { return (n == null ? '—' : Number(n).toLocaleString() + '金'); }
+  // 价格量级单位（与求购弹窗一致）：按绝对值显示 个/十/百/…/十亿
+  function priceMagnitudeUnit(v) {
+    const abs = Math.abs(Number(v) || 0);
+    if (abs >= 1000000000) return '十亿';
+    if (abs >= 100000000) return '亿';
+    if (abs >= 10000000) return '千万';
+    if (abs >= 1000000) return '百万';
+    if (abs >= 100000) return '十万';
+    if (abs >= 10000) return '万';
+    if (abs >= 1000) return '千';
+    if (abs >= 100) return '百';
+    if (abs >= 10) return '十';
+    return '个';
+  }
 
   // ---------- 状态 ----------
 let cfg = null;           // { rarities:[], minQty:Number, priceAdj:Number(±金额) }
@@ -362,7 +377,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     // 深色主题（对齐遗物商店 UI）：夜间模式也能看清内容
     Object.assign(panel.style, {
       position: 'fixed', right: '16px', top: '90px', zIndex: '1000000', // 需高于聚合面板(999999)以免被遮挡吞掉点击
-      width: '380px', background: '#1e1e24', border: '1px solid #3a3a42', borderRadius: '10px',
+      width: '420px', background: '#1e1e24', border: '1px solid #3a3a42', borderRadius: '10px',
       boxShadow: '0 6px 20px rgba(0,0,0,.5)', padding: '14px 16px', fontFamily: 'inherit',
       color: '#e8e8e8',
     });
@@ -378,7 +393,7 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     const savedMinPrice = (saved.minPrice != null) ? saved.minPrice : 0;
     // 单鱼挂牌价「不限制」勾选：勾选=禁用挂牌价下限（视为0=不限制）
     const savedMinPriceLimit = saved.minPriceLimit === true;
-    // 页签头：挂单 / 捡漏
+    // 页签头：挂单 / 捡漏 / 倒鱼
     const tabHtml = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <b style="font-size:14px;">一键市场</b>
@@ -387,8 +402,9 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       <div style="display:flex;gap:6px;margin-bottom:10px;">
         <button type="button" data-tab="sell" style="flex:1;border:1px solid #4a4a52;border-radius:6px;padding:5px 0;font-size:13px;cursor:pointer;">挂单</button>
         <button type="button" data-tab="bargain" style="flex:1;border:1px solid #4a4a52;border-radius:6px;padding:5px 0;font-size:13px;cursor:pointer;">捡漏</button>
+        <button type="button" data-tab="flip" style="flex:1;border:1px solid #4a4a52;border-radius:6px;padding:5px 0;font-size:13px;cursor:pointer;">倒鱼</button>
       </div>`;
-    panel.innerHTML = tabHtml + `<div id="r1cm-tab-sell"></div><div id="r1cm-tab-bargain"></div>`;
+    panel.innerHTML = tabHtml + `<div id="r1cm-tab-sell"></div><div id="r1cm-tab-bargain"></div><div id="r1cm-tab-flip"></div>`;
     // 挂单页签内容（面板尚未 append 到 document，必须用 panel 作用域查找）
     const sellView = panel.querySelector('#r1cm-tab-sell');
     sellView.innerHTML = `
@@ -437,6 +453,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
     // 捡漏页签内容（面板尚未 append 到 document，必须用 panel 作用域查找）
     const bargainView = panel.querySelector('#r1cm-tab-bargain');
     bargainView.innerHTML = bargainPanelHtml();
+    const flipView = panel.querySelector('#r1cm-tab-flip');
+    flipView.innerHTML = flipPanelHtml();
     document.body.appendChild(panel);
 
     // 页签切换
@@ -582,6 +600,8 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
       document.addEventListener('mousemove', onMoveDrag);
       document.addEventListener('mouseup', onUpDrag);
     });
+    // 倒鱼页签：绑定买入/卖出启停与稀有度勾选
+    bindFlipPanel();
     // 默认打开的页签（捡漏按钮打开时优先捡漏）
     switchPanelTab(panel.dataset.tab || 'sell');
     // 恢复上次捡漏的筛选/勾选控件状态（重开不丢）
@@ -1712,17 +1732,1907 @@ let bargainState = null;  // 捡漏扫描结果 { sorted:[{fishId,name,mapTag,bi
 
   // ================== 捡漏：面板页签 + 非渔获页悬浮按钮 ==================
 
-  // 页签切换（挂单 sell / 捡漏 bargain）
+  // 页签切换（挂单 sell / 捡漏 bargain / 倒鱼 flip）
   function switchPanelTab(tab) {
     const p = el('r1cm-panel');
     if (!p) return;
-    ['sell', 'bargain'].forEach((t) => {
+    const tabColor = { sell: '#ff8c1a', bargain: '#8b5cf6', flip: '#0d9488' };
+    ['sell', 'bargain', 'flip'].forEach((t) => {
       const v = document.getElementById('r1cm-tab-' + t);
       if (v) v.style.display = (t === tab) ? '' : 'none';
       const tb = p.querySelector('button[data-tab="' + t + '"]');
-      if (tb) tb.style.background = (t === tab ? (t === 'bargain' ? '#8b5cf6' : '#ff8c1a') : '#2a2a30');
+      if (tb) tb.style.background = (t === tab ? (tabColor[t] || '#2a2a30') : '#2a2a30');
     });
     if (tab === 'bargain') { const s = el('rlb-status'); if (s && !s.textContent) s.textContent = '选择稀有度后点「开始」查询各鱼市场最低价，按价格升序列出。'; }
+    if (tab === 'flip') { refreshFlipUi(); }
+  }
+
+  // ================== 倒鱼（demo）：买入购买单 / 卖出占位 ==================
+  // 买入：多条「地图+稀有度+期望价」；启动后首轮尽快拉全量盘口，之后 5 分钟内轮流分散拉。
+  // 售价 < 期望 → 提示可购入；求购价 < 期望 → 提示可挂求购（期望价）。Demo 不下真实单。
+  const FLIP_POLL_MS = 5 * 60 * 1000;
+  const FLIP_CFG_KEY = 'r1cm-flip-cfg-v2';
+  const FLIP_STATS_KEY = 'r1cm-flip-stats-v3'; // v3：只统计倒鱼插件挂出的买卖成交
+  const FLIP_GAP_MIN_MS = 200;
+  const FLIP_FIRST_GAP_MS = 180; // 首轮快速拉全量时的间隔
+  const FLIP_SELL_FEE_RATE = 0.05; // 卖家手续费 5%（与市场配置一致）
+  const FLIP_LEDGER_KEEP_MS = 14 * 24 * 60 * 60 * 1000; // 倒鱼订单指纹保留 14 天
+  const FLIP_SOFT_MATCH_MS = 3 * 60 * 1000; // 无 orderId 时按鱼+价+量±3分钟软匹配
+
+  function normalizeFlipLedger(arr) {
+    const keepAfter = Date.now() - FLIP_LEDGER_KEEP_MS;
+    const out = [];
+    const seen = new Set();
+    for (const x of (Array.isArray(arr) ? arr : [])) {
+      if (!x || typeof x !== 'object') continue;
+      const side = String(x.side || '') === 'sell' ? 'sell' : 'buy';
+      const orderId = String(x.orderId || '');
+      const fishId = String(x.fishId || '');
+      const price = Math.round(Number(x.price) || 0);
+      const quantity = Math.max(0, Math.round(Number(x.quantity) || 0));
+      const at = Number(x.at) || Date.now();
+      if (at < keepAfter) continue;
+      const key = orderId ? ('id:' + orderId) : ('fp:' + side + '|' + fishId + '|' + price + '|' + quantity + '|' + at);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ side, orderId, fishId, price, quantity, at });
+    }
+    return out.slice(-600);
+  }
+
+  function loadFlipStats() {
+    try {
+      const o = JSON.parse(localStorage.getItem(FLIP_STATS_KEY) || 'null');
+      if (!o || typeof o !== 'object') {
+        return { sellRevenue: 0, buyCost: 0, tradeN: 0, syncedAt: 0, ledger: [] };
+      }
+      return {
+        sellRevenue: Math.max(0, Math.round(Number(o.sellRevenue) || 0)),
+        buyCost: Math.max(0, Math.round(Number(o.buyCost) || 0)),
+        tradeN: Math.max(0, Math.round(Number(o.tradeN) || 0)),
+        syncedAt: Number(o.syncedAt) || 0,
+        ledger: normalizeFlipLedger(o.ledger),
+      };
+    } catch (_e) {
+      return { sellRevenue: 0, buyCost: 0, tradeN: 0, syncedAt: 0, ledger: [] };
+    }
+  }
+  function saveFlipStats() {
+    try {
+      flipStats.ledger = normalizeFlipLedger(flipStats.ledger);
+      localStorage.setItem(FLIP_STATS_KEY, JSON.stringify({
+        sellRevenue: flipStats.sellRevenue,
+        buyCost: flipStats.buyCost,
+        tradeN: flipStats.tradeN || 0,
+        syncedAt: flipStats.syncedAt || 0,
+        ledger: flipStats.ledger,
+      }));
+    } catch (_e) {}
+  }
+  let flipStats = loadFlipStats();
+
+  function flipNetIncome() {
+    return Math.round(Number(flipStats.sellRevenue) || 0) - Math.round(Number(flipStats.buyCost) || 0);
+  }
+
+  // 倒鱼真实下单成功后登记：成交同步只认这些单（opts.keepAt：种子导入时不刷新时间）
+  function flipRememberFlipOrder(side, orderId, fishId, price, quantity, opts) {
+    const s = String(side) === 'sell' ? 'sell' : 'buy';
+    const oid = String(orderId || '');
+    const fid = String(fishId || '');
+    const p = Math.round(Number(price) || 0);
+    const q = Math.max(0, Math.round(Number(quantity) || 0));
+    if (!oid && !(fid && p > 0 && q > 0)) return;
+    if (!Array.isArray(flipStats.ledger)) flipStats.ledger = [];
+    if (oid) {
+      const hit = flipStats.ledger.find((x) => x && String(x.orderId) === oid);
+      if (hit) {
+        hit.side = s;
+        if (fid) hit.fishId = fid;
+        if (p > 0) hit.price = p;
+        if (q > 0) hit.quantity = q;
+        if (!(opts && opts.keepAt)) hit.at = Date.now();
+        saveFlipStats();
+        return;
+      }
+    }
+    flipStats.ledger.push({ side: s, orderId: oid, fishId: fid, price: p, quantity: q, at: Date.now() });
+    saveFlipStats();
+  }
+
+  // 把当前购买单/卖出单里已登记挂单并入账本指纹（重启后仍能对上成交）
+  function flipSeedLedgerFromPlaced() {
+    const buys = (typeof flipState !== 'undefined' && flipState && flipState.buyOrders) ? flipState.buyOrders : [];
+    for (const bo of buys) {
+      for (const p of (bo.placedBids || [])) {
+        if (p && p.id) flipRememberFlipOrder('buy', p.id, p.fishId, p.price, p.quantity, { keepAt: true });
+      }
+    }
+    const sells = (typeof flipSellState !== 'undefined' && flipSellState && flipSellState.sellOrders)
+      ? flipSellState.sellOrders : [];
+    for (const so of sells) {
+      for (const p of (so.placedAsks || [])) {
+        if (p && p.id) flipRememberFlipOrder('sell', p.id, p.fishId, p.price, p.quantity, { keepAt: true });
+      }
+    }
+  }
+
+  function flipTradeTimeMs(t) {
+    if (!t || typeof t !== 'object') return NaN;
+    const raw = t.createdAt != null ? t.createdAt
+      : (t.created_at != null ? t.created_at
+        : (t.tradedAt != null ? t.tradedAt
+          : (t.executedAt != null ? t.executedAt
+            : (t.timestamp != null ? t.timestamp : t.time))));
+    if (raw == null || raw === '') return NaN;
+    if (typeof raw === 'number') return raw < 1e12 ? raw * 1000 : raw;
+    const ms = Date.parse(String(raw));
+    return Number.isFinite(ms) ? ms : NaN;
+  }
+
+  function flipTradeRelatedOrderIds(t) {
+    const ids = [];
+    const push = (v) => {
+      const s = String(v || '');
+      if (s) ids.push(s);
+    };
+    push(t.buyOrderId); push(t.sellOrderId); push(t.orderId); push(t.myOrderId);
+    push(t.makerOrderId); push(t.takerOrderId);
+    push(t.bidOrderId); push(t.askOrderId);
+    if (t.buyOrder && typeof t.buyOrder === 'object') push(t.buyOrder.id || t.buyOrder.orderId);
+    if (t.sellOrder && typeof t.sellOrder === 'object') push(t.sellOrder.id || t.sellOrder.orderId);
+    if (t.order && typeof t.order === 'object') push(t.order.id || t.order.orderId);
+    return ids;
+  }
+
+  function flipTradeFishId(t) {
+    return String(
+      t.fishId
+      || (t.asset && t.asset.fish && t.asset.fish.fishId)
+      || (t.fish && t.fish.fishId)
+      || ''
+    );
+  }
+
+  // 成交是否属于倒鱼插件：优先 orderId；否则鱼+方向+单价+数量±时间软匹配
+  function flipTradeBelongsToPlugin(t, side, unit, qty, ts, orderIdSet, softPool) {
+    const rel = flipTradeRelatedOrderIds(t);
+    if (rel.some((id) => orderIdSet.has(id))) return true;
+    if (!(softPool && softPool.length)) return false;
+    const fid = flipTradeFishId(t);
+    if (!fid || !(unit > 0 && qty > 0) || !Number.isFinite(ts)) return false;
+    for (let i = 0; i < softPool.length; i++) {
+      const a = softPool[i];
+      if (!a || a.side !== side) continue;
+      if (a.fishId && a.fishId !== fid) continue;
+      if (!(a.price > 0) || a.price !== unit) continue;
+      if (a.quantity > 0 && a.quantity !== qty) continue;
+      if (Math.abs((a.at || 0) - ts) > FLIP_SOFT_MATCH_MS) continue;
+      softPool.splice(i, 1); // 一条指纹只配一笔，避免重复计
+      return true;
+    }
+    return false;
+  }
+
+  function refreshFlipStatsUi() {
+    const elRev = el('rflip-stat-sell');
+    const elCost = el('rflip-stat-buy');
+    const elNet = el('rflip-stat-net');
+    const elSync = el('rflip-stat-sync');
+    if (elRev) elRev.textContent = fmtGold(flipStats.sellRevenue);
+    if (elCost) elCost.textContent = fmtGold(flipStats.buyCost);
+    if (elNet) {
+      const net = flipNetIncome();
+      elNet.textContent = (net >= 0 ? '+' : '') + Number(net).toLocaleString() + '金';
+      elNet.style.color = net >= 0 ? '#86efac' : '#fca5a5';
+    }
+    if (elSync) {
+      const nLed = (flipStats.ledger && flipStats.ledger.length) || 0;
+      elSync.textContent = flipStats.syncedAt
+        ? ('倒鱼 · ' + (flipStats.tradeN || 0) + '笔 · 登记' + nLed + ' · ' + new Date(flipStats.syncedAt).toLocaleTimeString())
+        : ('未同步（倒鱼单' + nLed + '）');
+    }
+  }
+
+  // 扫描成交：只计倒鱼插件登记过的买卖；买鱼成本=成交额；卖鱼收入=到手（扣 5% 税）
+  async function flipSyncTradesFromApi() {
+    flipSeedLedgerFromPlaced();
+    const ledger = normalizeFlipLedger(flipStats.ledger);
+    flipStats.ledger = ledger;
+    const orderIdSet = new Set(ledger.map((x) => String(x.orderId || '')).filter(Boolean));
+    const softPool = ledger
+      .filter((x) => x && x.fishId && x.price > 0)
+      .map((x) => ({ side: x.side, fishId: x.fishId, price: x.price, quantity: x.quantity, at: x.at }));
+
+    let sellRevenue = 0, buyCost = 0, tradeN = 0;
+    let cursor = null;
+    let pages = 0;
+    const stopBefore = Date.now() - FLIP_LEDGER_KEEP_MS; // 只扫近 14 天成交
+
+    while (pages < 12) {
+      pages += 1;
+      let path = '/api/market/me/trades?assetType=fish&limit=50';
+      if (cursor) path += '&cursor=' + encodeURIComponent(cursor);
+      const res = await getJSON(path);
+      if (!(res && res.ok && res.data)) break;
+      const raw = res.data;
+      const payload = (raw && raw.data && typeof raw.data === 'object' && (Array.isArray(raw.data.trades) || raw.data.nextCursor != null))
+        ? raw.data : raw;
+      const trades = Array.isArray(payload.trades) ? payload.trades
+        : (Array.isArray(payload.items) ? payload.items
+          : (Array.isArray(payload) ? payload : []));
+      if (!trades.length) break;
+
+      let pageAllOlder = trades.length > 0;
+      for (const t of trades) {
+        if (!t || typeof t !== 'object') continue;
+        const ts = flipTradeTimeMs(t);
+        if (Number.isFinite(ts) && ts >= stopBefore) pageAllOlder = false;
+        if (Number.isFinite(ts) && ts < stopBefore) continue;
+
+        const assetType = String(
+          t.assetType || (t.asset && t.asset.type) || (t.asset && t.asset.fish ? 'fish' : '') || ''
+        ).toLowerCase();
+        if (assetType && assetType !== 'fish') continue;
+
+        const sideRaw = String(t.side || t.mySide || t.role || t.direction || '').toLowerCase();
+        const isBuy = sideRaw === 'buy' || sideRaw === 'buyer' || t.isBuyer === true;
+        const isSell = sideRaw === 'sell' || sideRaw === 'seller' || t.isSeller === true;
+        if (!isBuy && !isSell) continue;
+
+        const qty = Math.max(0, Math.round(Number(t.quantity || t.qty || t.filledQuantity || 0)));
+        const unit = Math.round(Number(t.unitPrice || t.limitUnitPrice || t.price || t.executedUnitPrice || 0));
+        if (!(qty > 0 && unit > 0)) continue;
+
+        const side = isBuy ? 'buy' : 'sell';
+        if (!flipTradeBelongsToPlugin(t, side, unit, qty, ts, orderIdSet, softPool)) continue;
+
+        const gross = unit * qty;
+        if (isBuy) {
+          buyCost += gross;
+          tradeN += 1;
+        } else {
+          const proceeds = Number(t.sellerProceeds != null ? t.sellerProceeds
+            : (t.proceeds != null ? t.proceeds
+              : (t.netAmount != null ? t.netAmount : NaN)));
+          sellRevenue += Number.isFinite(proceeds) && proceeds >= 0
+            ? Math.round(proceeds)
+            : Math.round(gross * (1 - FLIP_SELL_FEE_RATE));
+          tradeN += 1;
+        }
+      }
+
+      if (pageAllOlder && ledger.length) break;
+      const next = payload.nextCursor != null ? payload.nextCursor : null;
+      const nextStr = (next != null && next !== '') ? String(next) : '';
+      if (!nextStr || trades.length < 50) break;
+      cursor = nextStr;
+      await sleep(200);
+    }
+
+    flipStats.sellRevenue = sellRevenue;
+    flipStats.buyCost = buyCost;
+    flipStats.tradeN = tradeN;
+    flipStats.syncedAt = Date.now();
+    saveFlipStats();
+    refreshFlipStatsUi();
+    flipLog('账本同步（倒鱼单）：' + tradeN + ' 笔 · 卖 ' + fmtGold(sellRevenue)
+      + ' · 买 ' + fmtGold(buyCost)
+      + ' · 净 ' + ((flipNetIncome() >= 0 ? '+' : '') + Number(flipNetIncome()).toLocaleString() + '金')
+      + (orderIdSet.size ? (' · 已登记单 ' + orderIdSet.size) : ' · 尚无倒鱼挂单登记'));
+    return { ok: true, tradeN, sellRevenue, buyCost };
+  }
+
+  function flipResetStats() {
+    if (!window.confirm('确认清零倒鱼账本？\n\n将清空收入统计与倒鱼订单登记，之后只统计新的倒鱼买入/卖出。')) return;
+    flipStats = { sellRevenue: 0, buyCost: 0, tradeN: 0, syncedAt: 0, ledger: [] };
+    saveFlipStats();
+    refreshFlipStatsUi();
+    flipLog('账本已清零（含倒鱼订单登记）');
+    flipSeedLedgerFromPlaced();
+    flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+  }
+  let flipState = {
+    buyRunning: false,
+    mode: null,            // null | 'detect' 仅提示 | 'buy' 真实挂单/买入
+    timer: null,
+    sampling: false,
+    lastSampleAt: 0,
+    lastNote: '',
+    queue: [],
+    queueIdx: 0,
+    cycleStartAt: 0,
+    cycleNo: 0,
+    firstCycle: true,      // 启动后第一轮：尽快拉完；之后摊到 5 分钟
+    tipKeys: new Set(),    // 本轮已提示过的 key，防刷屏（检测模式）
+    actedKeys: new Set(),  // 本轮会话已执行过的买入/挂求购 key（买入模式）
+    quotes: {},            // fishId -> { ask, bid, t, name, rarity, mapTag }
+    buyOrders: loadFlipBuyOrders(),
+    myBuyIds: new Set(),           // 启动时拉取的自己求购单 id
+    myBuyPricesByFish: {},         // fishId -> Set(价格)，盘口仅有档位时用于剔除
+    mySellIds: new Set(),          // 自己的卖单 id（买入时剔除）
+    mySellPricesByFish: {},        // fishId -> Set(卖价)
+    cancelBusy: false,             // 购买单撤单进行中
+  };
+
+  function loadFlipBuyOrders() {
+    try {
+      const o = JSON.parse(localStorage.getItem(FLIP_CFG_KEY) || 'null');
+      const arr = (o && Array.isArray(o.buyOrders)) ? o.buyOrders : [];
+      return arr.map((x, i) => ({
+        id: String(x.id || ('bo_' + Date.now() + '_' + i)),
+        biomeId: typeof x.biomeId === 'string' ? x.biomeId : '',
+        rarity: RARITY_ORDER.includes(x.rarity) ? x.rarity : 'rare',
+        expectPrice: Math.max(1, Math.round(Number(x.expectPrice) || 0)),
+        quantity: Math.max(1, Math.round(Number(x.quantity) || 1)),
+        // 本购买单自动挂出的求购（撤单/跟价只动这些）
+        placedBids: normalizeFlipPlacedBids(x),
+      })).filter((x) => x.expectPrice > 0);
+    } catch (_e) { return []; }
+  }
+  function saveFlipBuyOrders() {
+    try {
+      localStorage.setItem(FLIP_CFG_KEY, JSON.stringify({
+        buyOrders: flipState.buyOrders || [],
+        sellOrders: (typeof flipSellState !== 'undefined' && flipSellState.sellOrders) ? flipSellState.sellOrders : loadFlipSellOrders(),
+      }));
+    } catch (_e) {}
+  }
+
+  function normalizeFlipPlacedAsks(x) {
+    if (x && Array.isArray(x.placedAsks)) {
+      return x.placedAsks.map((p) => ({
+        id: String((p && p.id) || ''),
+        fishId: String((p && p.fishId) || ''),
+        price: Math.round(Number((p && p.price) || 0)),
+        quantity: Math.max(1, Math.round(Number((p && p.quantity) || 1))),
+      })).filter((p) => p.id);
+    }
+    return [];
+  }
+
+  function loadFlipSellOrders() {
+    try {
+      const o = JSON.parse(localStorage.getItem(FLIP_CFG_KEY) || 'null');
+      const arr = (o && Array.isArray(o.sellOrders)) ? o.sellOrders : [];
+      return arr.map((x, i) => ({
+        id: String(x.id || ('so_' + Date.now() + '_' + i)),
+        biomeId: typeof x.biomeId === 'string' ? x.biomeId : '',
+        rarity: RARITY_ORDER.includes(x.rarity) ? x.rarity : 'rare',
+        expectPrice: Math.max(1, Math.round(Number(x.expectPrice) || 0)),
+        placedAsks: normalizeFlipPlacedAsks(x),
+      })).filter((x) => x.expectPrice > 0);
+    } catch (_e) { return []; }
+  }
+  function saveFlipSellOrders() { saveFlipBuyOrders(); }
+
+  // 卖出侧独立状态（可与买入并行）
+  let flipSellState = {
+    running: false,
+    mode: null, // null | 'detect' | 'sell'
+    timer: null,
+    sampling: false,
+    lastSampleAt: 0,
+    lastNote: '',
+    queue: [],
+    queueIdx: 0,
+    cycleStartAt: 0,
+    cycleNo: 0,
+    firstCycle: true,
+    tipKeys: new Set(),
+    actedKeys: new Set(),
+    quotes: {},
+    sellOrders: loadFlipSellOrders(),
+    invQty: {}, // fishId -> 背包数量
+    cancelBusy: false,
+  };
+
+  function normalizeFlipPlacedBids(x) {
+    if (x && Array.isArray(x.placedBids)) {
+      return x.placedBids.map((p) => ({
+        id: String((p && p.id) || ''),
+        fishId: String((p && p.fishId) || ''),
+        price: Math.round(Number((p && p.price) || 0)),
+        quantity: Math.max(1, Math.round(Number((p && p.quantity) || 1))),
+      })).filter((p) => p.id);
+    }
+    // 兼容旧版只存 id 列表
+    if (x && Array.isArray(x.placedOrderIds)) {
+      return x.placedOrderIds.map(String).filter(Boolean).map((id) => ({
+        id, fishId: '', price: 0, quantity: 1,
+      }));
+    }
+    return [];
+  }
+
+  function flipRarityOptionsHtml(selected) {
+    return RARITY_ORDER.map((r) =>
+      `<option value="${r}"${r === selected ? ' selected' : ''}>${RARITY_CN[r] || r}</option>`
+    ).join('');
+  }
+
+  function flipBuyOrdersListHtml() {
+    const list = flipState.buyOrders || [];
+    if (!list.length) {
+      return '<div style="font-size:12px;color:#64748b;padding:6px 0;">暂无购买单。下方添加「地图 + 稀有度 + 期望价 + 数量」。</div>';
+    }
+    return list.map((o) => {
+      const mapTxt = o.biomeId ? (biomeIdToTag(o.biomeId) || o.biomeId) : '全部地图';
+      const rarTxt = RARITY_CN[o.rarity] || o.rarity;
+      const qty = Math.max(1, Math.round(Number(o.quantity) || 1));
+      return `<div data-boid="${escapeHtml(o.id)}" style="display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid #1e293b;font-size:12px;color:#e2e8f0;">
+        <span style="flex:1;min-width:0;line-height:1.4;">${escapeHtml(mapTxt)} · ${escapeHtml(rarTxt)} · 期望 ${fmtGold(o.expectPrice)} · ×${qty}</span>
+        <button type="button" class="rflip-bo-cancel" data-boid="${escapeHtml(o.id)}" title="撤回该购买单匹配的市场求购" style="padding:2px 8px;border:none;border-radius:4px;background:#92400e;color:#fde68a;font-size:11px;cursor:pointer;">撤单</button>
+        <button type="button" class="rflip-bo-del" data-boid="${escapeHtml(o.id)}" title="仅删除本地购买单" style="padding:2px 8px;border:none;border-radius:4px;background:#7f1d1d;color:#fecaca;font-size:11px;cursor:pointer;">删除</button>
+      </div>`;
+    }).join('');
+  }
+
+  function flipPanelHtml() {
+    return `
+      <div style="border:1px solid #1e3a5f;border-radius:8px;padding:10px;margin-bottom:10px;background:#0b1220;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <b style="color:#38bdf8;font-size:13px;">买入</b>
+          <span id="rflip-buy-badge" style="font-size:11px;color:#64748b;">已停止</span>
+        </div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">购买单</div>
+        <div id="rflip-buy-orders" style="max-height:120px;overflow:auto;background:#020617;border:1px solid #1e293b;border-radius:6px;padding:4px 6px;margin-bottom:8px;">${flipBuyOrdersListHtml()}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;font-size:12px;">
+          <select id="rflip-buy-biome" title="地图" style="flex:1.2;min-width:100px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;">
+            <option value="">全部地图</option>
+          </select>
+          <select id="rflip-buy-rar" title="稀有度" style="flex:0.9;min-width:72px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;">
+            ${flipRarityOptionsHtml('rare')}
+          </select>
+          <input id="rflip-buy-expect" type="number" min="1" step="1" placeholder="期望价" title="期望买入价格"
+            style="width:100px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;" />
+          <span id="rflip-buy-expect-unit" style="color:#7dd3fc;flex-shrink:0;font-size:11px;min-width:4.5em;">单位：个</span>
+          <input id="rflip-buy-qty" type="number" min="1" step="1" value="1" placeholder="数量" title="买入/求购数量（条）"
+            style="width:64px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;" />
+          <span style="color:#94a3b8;flex-shrink:0;font-size:11px;">条</span>
+          <button id="rflip-buy-add" type="button" style="padding:5px 10px;border:none;border-radius:6px;background:#0369a1;color:#fff;font-size:12px;cursor:pointer;">添加购买单</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="rflip-buy-detect" type="button" style="flex:1;padding:6px;border:none;border-radius:6px;background:#475569;color:#fff;font-size:13px;cursor:pointer;">检测</button>
+          <button id="rflip-buy-start" type="button" style="flex:1;padding:6px;border:none;border-radius:6px;background:#0284c7;color:#fff;font-size:13px;cursor:pointer;">开始买入</button>
+          <button id="rflip-buy-stop" type="button" style="flex:1;padding:6px;border:none;border-radius:6px;background:#334155;color:#cbd5e1;font-size:13px;cursor:pointer;">停止</button>
+        </div>
+      </div>
+      <div style="border:1px solid #3f2a1a;border-radius:8px;padding:10px;margin-bottom:10px;background:#1a120b;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <b style="color:#fb923c;font-size:13px;">卖出</b>
+          <span id="rflip-sell-badge" style="font-size:11px;color:#78716c;">已停止</span>
+        </div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">卖出单</div>
+        <div id="rflip-sell-orders" style="max-height:120px;overflow:auto;background:#1c1410;border:1px solid #44403c;border-radius:6px;padding:4px 6px;margin-bottom:8px;"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;font-size:12px;">
+          <select id="rflip-sell-biome" title="地图" style="flex:1.2;min-width:100px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;">
+            <option value="">全部地图</option>
+          </select>
+          <select id="rflip-sell-rar" title="稀有度" style="flex:0.9;min-width:72px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;">
+            ${flipRarityOptionsHtml('rare')}
+          </select>
+          <input id="rflip-sell-expect" type="number" min="1" step="1" placeholder="期望卖出价" title="期望卖出价格（下限）"
+            style="width:110px;padding:5px 6px;border:1px solid #4a4a52;border-radius:6px;background:#2a2a30;color:#e8e8e8;" />
+          <span id="rflip-sell-expect-unit" style="color:#fdba74;flex-shrink:0;font-size:11px;min-width:4.5em;">单位：个</span>
+          <button id="rflip-sell-add" type="button" style="padding:5px 10px;border:none;border-radius:6px;background:#c2410c;color:#fff;font-size:12px;cursor:pointer;">添加卖出单</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="rflip-sell-detect" type="button" style="flex:1;padding:6px;border:none;border-radius:6px;background:#57534e;color:#fff;font-size:13px;cursor:pointer;">检测</button>
+          <button id="rflip-sell-start" type="button" style="flex:1;padding:6px;border:none;border-radius:6px;background:#c2410c;color:#fff;font-size:13px;cursor:pointer;">开始卖出</button>
+          <button id="rflip-sell-stop" type="button" style="flex:1;padding:6px;border:none;border-radius:6px;background:#334155;color:#cbd5e1;font-size:13px;cursor:pointer;">停止</button>
+        </div>
+      </div>
+      <div id="rflip-stats" style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:12px;color:#cbd5e1;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 8px;margin-bottom:6px;" title="只统计倒鱼插件自动买入/挂求购/挂售对应的成交">
+        <span style="color:#64748b;font-size:11px;">倒鱼</span>
+        <span>卖鱼收入 <b id="rflip-stat-sell" style="color:#86efac;">—</b></span>
+        <span>买鱼成本 <b id="rflip-stat-buy" style="color:#fca5a5;">—</b></span>
+        <span>净收入 <b id="rflip-stat-net" style="color:#86efac;">—</b></span>
+        <span id="rflip-stat-sync" style="color:#64748b;font-size:11px;">未同步（倒鱼）</span>
+        <button id="rflip-stat-sync-btn" type="button" style="padding:2px 8px;border:none;border-radius:4px;background:#334155;color:#e2e8f0;font-size:11px;cursor:pointer;">同步</button>
+        <button id="rflip-stat-reset" type="button" style="padding:2px 8px;border:none;border-radius:4px;background:#7f1d1d;color:#fecaca;font-size:11px;cursor:pointer;">清零</button>
+      </div>
+      <div id="rflip-status" style="font-size:12px;color:#94a3b8;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">就绪。可分别做买入/卖出。</div>
+      <div id="rflip-log" style="max-height:220px;overflow:auto;background:#17171b;border:1px solid #3a3a42;border-radius:6px;padding:8px;font-size:12px;color:#d0d0d0;line-height:1.45;"></div>`;
+  }
+
+  function flipLog(msg) {
+    const box = el('rflip-log');
+    const line = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    console.log(TAG, '[倒鱼]', msg);
+    if (!box) return;
+    const div = document.createElement('div');
+    div.style.borderBottom = '1px solid #2a2a30';
+    div.style.padding = '3px 0';
+    div.textContent = line;
+    box.insertBefore(div, box.firstChild);
+    while (box.childNodes.length > 100) box.removeChild(box.lastChild);
+  }
+
+  function flipPlacedBidsOnFish(bo, fishId) {
+    const list = (bo && Array.isArray(bo.placedBids)) ? bo.placedBids : [];
+    if (!fishId) return list.filter((p) => p && p.id);
+    return list.filter((p) => p && p.id && p.fishId === fishId);
+  }
+
+  function flipAttachPlacedBid(boId, rec) {
+    const oid = String((rec && rec.id) || '');
+    if (!oid || !boId) return;
+    const bo = (flipState.buyOrders || []).find((x) => x.id === boId);
+    if (!bo) return;
+    if (!Array.isArray(bo.placedBids)) bo.placedBids = [];
+    const i = bo.placedBids.findIndex((p) => p && p.id === oid);
+    const row = {
+      id: oid,
+      fishId: String((rec && rec.fishId) || ''),
+      price: Math.round(Number((rec && rec.price) || 0)),
+      quantity: Math.max(1, Math.round(Number((rec && rec.quantity) || 1))),
+    };
+    if (i >= 0) bo.placedBids[i] = row;
+    else bo.placedBids.push(row);
+    saveFlipBuyOrders();
+  }
+
+  function flipRemovePlacedBidIds(bo, ids) {
+    if (!bo) return;
+    const drop = new Set((ids || []).map(String));
+    bo.placedBids = (Array.isArray(bo.placedBids) ? bo.placedBids : []).filter((p) => p && !drop.has(String(p.id)));
+    saveFlipBuyOrders();
+  }
+
+  // 挂单成功后若响应无 id，从「我的挂单」里按鱼+价+量找回并登记到购买单
+  async function flipRegisterPlacedBuy(boId, fishId, limitUnitPrice, quantity, knownId) {
+    let oid = String(knownId || '');
+    if (!oid) {
+      await sleep(250);
+      const mine = await fetchMyFishOrders();
+      if (mine && mine.ok && Array.isArray(mine.orders)) {
+        const qty = Math.max(1, Math.round(Number(quantity) || 1));
+        const price = Number(limitUnitPrice);
+        const hit = mine.orders.find((o) =>
+          o && o.side === 'buy' && o.status === 'active'
+          && (o.remainingQuantity || 0) > 0
+          && o.asset && o.asset.fish && o.asset.fish.fishId === fishId
+          && Number(o.limitUnitPrice) === price
+          && Number(o.remainingQuantity || o.quantity || 0) >= qty
+        );
+        if (hit) oid = String(hit.id || hit.orderId || '');
+      }
+    }
+    if (oid) {
+      flipAttachPlacedBid(boId, { id: oid, fishId, price: limitUnitPrice, quantity });
+      flipState.myBuyIds.add(oid);
+    }
+    // 无论是否拿到 id，都记入倒鱼账本指纹（成交同步只认这些）
+    flipRememberFlipOrder('buy', oid, fishId, limitUnitPrice, quantity);
+    return oid;
+  }
+
+  // 下架指定已登记求购（跟价撤旧 / 手动撤单共用）
+  async function flipDeletePlacedBidRows(bo, rows, label) {
+    const list = (rows || []).filter((p) => p && p.id);
+    if (!list.length) return { okN: 0, failN: 0 };
+    let okN = 0, failN = 0;
+    for (const p of list) {
+      const oid = String(p.id);
+      let del = await postJSON('/api/market/orders/' + encodeURIComponent(oid), 'DELETE', null);
+      if (!(del && del.ok && del.status === 200) && (await backoffIfRateLimited(del))) {
+        del = await postJSON('/api/market/orders/' + encodeURIComponent(oid), 'DELETE', null);
+      }
+      if (del && del.ok && del.status === 200) {
+        okN += 1;
+        flipState.myBuyIds.delete(oid);
+        const fid = p.fishId;
+        if (fid && flipState.myBuyPricesByFish[fid]) {
+          if (p.price > 0) flipState.myBuyPricesByFish[fid].delete(Number(p.price));
+          if (!flipState.myBuyPricesByFish[fid].size) delete flipState.myBuyPricesByFish[fid];
+        }
+        flipLog('↧ ' + (label || '已撤') + ' ' + (fid || oid) + (p.price > 0 ? (' @' + fmtGold(p.price)) : ''));
+        flipRemovePlacedBidIds(bo, [oid]);
+      } else {
+        failN += 1;
+        flipLog('❌ 撤单失败 ' + oid + ': ' + safeErr(del && del.body, del && del.error));
+      }
+      await sleep(300);
+    }
+    return { okN, failN };
+  }
+
+  async function flipCancelMarketForBuyOrder(bo) {
+    if (!bo) return;
+    if (flipState.cancelBusy) {
+      flipLog('正在撤单中，请稍候');
+      return;
+    }
+    flipState.cancelBusy = true;
+    try {
+      const rows = Array.isArray(bo.placedBids) ? bo.placedBids.slice() : [];
+      if (!rows.length) {
+        flipLog('撤单：该购买单没有登记过的自动求购，不会撤其它手动单');
+        return;
+      }
+      const want = new Set(rows.map((p) => String(p.id)).filter(Boolean));
+      flipLog('撤单：拉取自己的求购，仅处理本单登记的 ' + want.size + ' 条…');
+      const mine = await fetchMyFishOrders();
+      if (!(mine && mine.ok && Array.isArray(mine.orders))) {
+        flipLog('❌ 撤单失败：无法读取挂单 (' + ((mine && mine.error) || 'unknown') + ')');
+        return;
+      }
+      const liveIds = new Set(
+        mine.orders.filter((o) =>
+          o && o.side === 'buy' && o.status === 'active' && (o.remainingQuantity || 0) > 0
+        ).map((o) => String(o.id || o.orderId || '')).filter(Boolean)
+      );
+      // 已不在活动列表的登记直接清掉
+      const gone = rows.filter((p) => !liveIds.has(String(p.id)));
+      if (gone.length) flipRemovePlacedBidIds(bo, gone.map((p) => p.id));
+      const targets = rows.filter((p) => liveIds.has(String(p.id)));
+      if (!targets.length) {
+        flipLog('撤单：登记的自动求购已不在活动挂单中（可能已成交/已手撤）');
+        return;
+      }
+      // 用市场上的价/鱼名补全日志信息
+      for (const p of targets) {
+        const mo = mine.orders.find((o) => String(o.id || o.orderId || '') === String(p.id));
+        if (mo && mo.asset && mo.asset.fish) {
+          if (!p.fishId) p.fishId = mo.asset.fish.fishId || '';
+          if (!(p.price > 0)) p.price = Number(mo.limitUnitPrice) || 0;
+        }
+      }
+      flipLog('撤单：命中 ' + targets.length + ' 条自动求购，开始下架…');
+      const r = await flipDeletePlacedBidRows(bo, targets, '已撤');
+      flipLog('撤单完成：成功 ' + r.okN + ' / 失败 ' + r.failN);
+    } finally {
+      flipState.cancelBusy = false;
+    }
+  }
+
+  function flipRenderBuyOrders() {
+    const box = el('rflip-buy-orders');
+    if (!box) return;
+    box.innerHTML = flipBuyOrdersListHtml();
+    box.querySelectorAll('.rflip-bo-cancel').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-boid');
+        const bo = (flipState.buyOrders || []).find((x) => x.id === id);
+        if (!bo) return;
+        const mapTxt = bo.biomeId ? (biomeIdToTag(bo.biomeId) || bo.biomeId) : '全部地图';
+        const rarTxt = RARITY_CN[bo.rarity] || bo.rarity;
+        const qtyTxt = '×' + Math.max(1, Math.round(Number(bo.quantity) || 1));
+        if (!window.confirm(
+          '确认撤回该购买单对应的市场求购？\n\n'
+          + mapTxt + ' · ' + rarTxt + ' · 期望 ' + fmtGold(bo.expectPrice) + ' · ' + qtyTxt
+          + '\n\n只会下架本购买单自动挂出并已登记的求购，不会动你手动挂的单。'
+        )) return;
+        flipCancelMarketForBuyOrder(bo).catch((e) => console.warn(TAG, '[倒鱼] 撤单', e));
+      });
+    });
+    box.querySelectorAll('.rflip-bo-del').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-boid');
+        const bo = (flipState.buyOrders || []).find((x) => x.id === id);
+        const mapTxt = bo
+          ? ((bo.biomeId ? (biomeIdToTag(bo.biomeId) || bo.biomeId) : '全部地图')
+            + ' · ' + (RARITY_CN[bo.rarity] || bo.rarity) + ' · 期望 ' + fmtGold(bo.expectPrice)
+            + ' · ×' + Math.max(1, Math.round(Number(bo.quantity) || 1)))
+          : '';
+        if (!window.confirm(
+          '确认删除该购买单？\n\n' + mapTxt
+          + '\n\n仅删除本地配置，不会下架市场挂单。如需下架请先点「撤单」。'
+        )) return;
+        flipState.buyOrders = (flipState.buyOrders || []).filter((x) => x.id !== id);
+        saveFlipBuyOrders();
+        flipRenderBuyOrders();
+        flipLog('已删除购买单' + (mapTxt ? '：' + mapTxt : ''));
+      });
+    });
+  }
+
+  function refreshFlipUi() {
+    const buyBadge = el('rflip-buy-badge');
+    const st = el('rflip-status');
+    if (buyBadge) {
+      if (!flipState.buyRunning) {
+        buyBadge.textContent = '已停止';
+        buyBadge.style.color = '#64748b';
+      } else if (flipState.mode === 'buy') {
+        buyBadge.textContent = '买入中';
+        buyBadge.style.color = '#38bdf8';
+      } else {
+        buyBadge.textContent = '检测中';
+        buyBadge.style.color = '#94a3b8';
+      }
+    }
+    const sellBadge = el('rflip-sell-badge');
+    if (sellBadge) {
+      if (!flipSellState.running) {
+        sellBadge.textContent = '已停止';
+        sellBadge.style.color = '#78716c';
+      } else if (flipSellState.mode === 'sell') {
+        sellBadge.textContent = '卖出中';
+        sellBadge.style.color = '#fb923c';
+      } else {
+        sellBadge.textContent = '检测中';
+        sellBadge.style.color = '#a8a29e';
+      }
+    }
+    if (st) {
+      const parts = [];
+      if (flipState.buyRunning) parts.push(flipState.mode === 'buy' ? '买入ON' : '买检测ON');
+      if (flipSellState.running) parts.push(flipSellState.mode === 'sell' ? '卖出ON' : '卖检测ON');
+      const qn = (flipState.queue && flipState.queue.length) || 0;
+      if (qn && flipState.buyRunning) parts.push('买 ' + Math.min(flipState.queueIdx + 1, qn) + '/' + qn);
+      const sqn = (flipSellState.queue && flipSellState.queue.length) || 0;
+      if (sqn && flipSellState.running) parts.push('卖 ' + Math.min(flipSellState.queueIdx + 1, sqn) + '/' + sqn);
+      if (flipState.sampling || flipSellState.sampling) parts.push('请求中…');
+      const note = flipSellState.running ? flipSellState.lastNote : flipState.lastNote;
+      if (note) parts.push(note);
+      st.textContent = parts.length ? parts.join(' · ') : '就绪。可分别做买入/卖出。';
+    }
+    const bd = el('rflip-buy-detect'), bs = el('rflip-buy-start'), bk = el('rflip-buy-stop');
+    if (bd) bd.disabled = !!flipState.buyRunning;
+    if (bs) bs.disabled = !!flipState.buyRunning;
+    if (bk) bk.disabled = !flipState.buyRunning;
+    const sd = el('rflip-sell-detect'), ss = el('rflip-sell-start'), sk = el('rflip-sell-stop');
+    if (sd) sd.disabled = !!flipSellState.running;
+    if (ss) ss.disabled = !!flipSellState.running;
+    if (sk) sk.disabled = !flipSellState.running;
+    refreshFlipStatsUi();
+  }
+
+  async function populateFlipBuyBiomeSelect() {
+    const sel = el('rflip-buy-biome');
+    if (!sel) return;
+    const list = await ensureBiomeList();
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">全部地图</option>' + list.map((b) =>
+      `<option value="${escapeHtml(b.biomeId)}">${escapeHtml(b.mapTag || b.biomeId)}</option>`
+    ).join('');
+    if (keep) sel.value = keep;
+  }
+
+  function flipRefreshExpectUnit() {
+    const unitEl = el('rflip-buy-expect-unit');
+    const input = el('rflip-buy-expect');
+    if (!unitEl) return;
+    unitEl.textContent = '单位：' + priceMagnitudeUnit(input ? input.value : 0);
+  }
+
+  function flipSellOrdersListHtml() {
+    const list = flipSellState.sellOrders || [];
+    if (!list.length) {
+      return '<div style="font-size:12px;color:#78716c;padding:6px 0;">暂无卖出单。下方添加「地图 + 稀有度 + 期望卖出价」。</div>';
+    }
+    return list.map((o) => {
+      const mapTxt = o.biomeId ? (biomeIdToTag(o.biomeId) || o.biomeId) : '全部地图';
+      const rarTxt = RARITY_CN[o.rarity] || o.rarity;
+      return `<div data-soid="${escapeHtml(o.id)}" style="display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid #292524;font-size:12px;color:#e7e5e4;">
+        <span style="flex:1;min-width:0;line-height:1.4;">${escapeHtml(mapTxt)} · ${escapeHtml(rarTxt)} · 期望卖 ${fmtGold(o.expectPrice)} · 数量=背包全量</span>
+        <button type="button" class="rflip-so-cancel" data-soid="${escapeHtml(o.id)}" title="撤回该卖出单匹配的市场卖单" style="padding:2px 8px;border:none;border-radius:4px;background:#92400e;color:#fde68a;font-size:11px;cursor:pointer;">撤单</button>
+        <button type="button" class="rflip-so-del" data-soid="${escapeHtml(o.id)}" title="仅删除本地卖出单" style="padding:2px 8px;border:none;border-radius:4px;background:#7f1d1d;color:#fecaca;font-size:11px;cursor:pointer;">删除</button>
+      </div>`;
+    }).join('');
+  }
+
+  function flipRemovePlacedAskIds(so, ids) {
+    if (!so) return;
+    const drop = new Set((ids || []).map(String));
+    so.placedAsks = (Array.isArray(so.placedAsks) ? so.placedAsks : []).filter((p) => p && !drop.has(String(p.id)));
+    saveFlipSellOrders();
+  }
+
+  async function flipDeletePlacedAskRows(so, rows, label) {
+    const list = (rows || []).filter((p) => p && p.id);
+    if (!list.length) return { okN: 0, failN: 0 };
+    let okN = 0, failN = 0;
+    for (const p of list) {
+      const oid = String(p.id);
+      let del = await postJSON('/api/market/orders/' + encodeURIComponent(oid), 'DELETE', null);
+      if (!(del && del.ok && del.status === 200) && (await backoffIfRateLimited(del))) {
+        del = await postJSON('/api/market/orders/' + encodeURIComponent(oid), 'DELETE', null);
+      }
+      if (del && del.ok && del.status === 200) {
+        okN += 1;
+        flipState.mySellIds.delete(oid);
+        const fid = p.fishId;
+        if (fid && flipState.mySellPricesByFish[fid]) {
+          if (p.price > 0) flipState.mySellPricesByFish[fid].delete(Number(p.price));
+          if (!flipState.mySellPricesByFish[fid].size) delete flipState.mySellPricesByFish[fid];
+        }
+        flipLog('↧ ' + (label || '已撤卖单') + ' ' + (fid || oid) + (p.price > 0 ? (' @' + fmtGold(p.price)) : ''));
+        flipRemovePlacedAskIds(so, [oid]);
+      } else {
+        failN += 1;
+        flipLog('❌ 撤卖单失败 ' + oid + ': ' + safeErr(del && del.body, del && del.error));
+      }
+      await sleep(300);
+    }
+    return { okN, failN };
+  }
+
+  async function flipCancelMarketForSellOrder(so) {
+    if (!so) return;
+    if (flipSellState.cancelBusy) {
+      flipLog('正在撤单中，请稍候');
+      return;
+    }
+    flipSellState.cancelBusy = true;
+    try {
+      const rows = Array.isArray(so.placedAsks) ? so.placedAsks.slice() : [];
+      if (!rows.length) {
+        flipLog('撤单：该卖出单没有登记过的自动卖单，不会撤其它手动单');
+        return;
+      }
+      const want = new Set(rows.map((p) => String(p.id)).filter(Boolean));
+      flipLog('撤单：拉取自己的卖单，仅处理本单登记的 ' + want.size + ' 条…');
+      const mine = await fetchMyFishOrders();
+      if (!(mine && mine.ok && Array.isArray(mine.orders))) {
+        flipLog('❌ 撤单失败：无法读取挂单 (' + ((mine && mine.error) || 'unknown') + ')');
+        return;
+      }
+      const liveIds = new Set(
+        mine.orders.filter((o) =>
+          o && o.side === 'sell' && o.status === 'active' && (o.remainingQuantity || 0) > 0
+        ).map((o) => String(o.id || o.orderId || '')).filter(Boolean)
+      );
+      const gone = rows.filter((p) => !liveIds.has(String(p.id)));
+      if (gone.length) flipRemovePlacedAskIds(so, gone.map((p) => p.id));
+      const targets = rows.filter((p) => liveIds.has(String(p.id)));
+      if (!targets.length) {
+        flipLog('撤单：登记的自动卖单已不在活动挂单中（可能已成交/已手撤）');
+        return;
+      }
+      for (const p of targets) {
+        const mo = mine.orders.find((o) => String(o.id || o.orderId || '') === String(p.id));
+        if (mo && mo.asset && mo.asset.fish) {
+          if (!p.fishId) p.fishId = mo.asset.fish.fishId || '';
+          if (!(p.price > 0)) p.price = Number(mo.limitUnitPrice) || 0;
+        }
+      }
+      flipLog('撤单：命中 ' + targets.length + ' 条自动卖单，开始下架…');
+      const r = await flipDeletePlacedAskRows(so, targets, '已撤卖单');
+      flipLog('撤卖单完成：成功 ' + r.okN + ' / 失败 ' + r.failN);
+    } finally {
+      flipSellState.cancelBusy = false;
+    }
+  }
+
+  function flipRenderSellOrders() {
+    const box = el('rflip-sell-orders');
+    if (!box) return;
+    box.innerHTML = flipSellOrdersListHtml();
+    box.querySelectorAll('.rflip-so-cancel').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-soid');
+        const so = (flipSellState.sellOrders || []).find((x) => x.id === id);
+        if (!so) return;
+        const mapTxt = so.biomeId ? (biomeIdToTag(so.biomeId) || so.biomeId) : '全部地图';
+        const rarTxt = RARITY_CN[so.rarity] || so.rarity;
+        if (!window.confirm(
+          '确认撤回该卖出单对应的市场卖单？\n\n'
+          + mapTxt + ' · ' + rarTxt + ' · 期望卖 ' + fmtGold(so.expectPrice)
+          + '\n\n只会下架本卖出单自动挂出并已登记的卖单，不会动你手动挂的单。'
+        )) return;
+        flipCancelMarketForSellOrder(so).catch((e) => console.warn(TAG, '[倒鱼] 撤卖单', e));
+      });
+    });
+    box.querySelectorAll('.rflip-so-del').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-soid');
+        const so = (flipSellState.sellOrders || []).find((x) => x.id === id);
+        const mapTxt = so
+          ? ((so.biomeId ? (biomeIdToTag(so.biomeId) || so.biomeId) : '全部地图')
+            + ' · ' + (RARITY_CN[so.rarity] || so.rarity) + ' · 期望卖 ' + fmtGold(so.expectPrice))
+          : '';
+        if (!window.confirm(
+          '确认删除该卖出单？\n\n' + mapTxt
+          + '\n\n仅删除本地配置，不会下架市场挂单。如需下架请先点「撤单」。'
+        )) return;
+        flipSellState.sellOrders = (flipSellState.sellOrders || []).filter((x) => x.id !== id);
+        saveFlipSellOrders();
+        flipRenderSellOrders();
+        flipLog('已删除卖出单' + (mapTxt ? '：' + mapTxt : ''));
+      });
+    });
+  }
+
+  async function populateFlipSellBiomeSelect() {
+    const sel = el('rflip-sell-biome');
+    if (!sel) return;
+    const list = await ensureBiomeList();
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">全部地图</option>' + list.map((b) =>
+      `<option value="${escapeHtml(b.biomeId)}">${escapeHtml(b.mapTag || b.biomeId)}</option>`
+    ).join('');
+    if (keep) sel.value = keep;
+  }
+
+  function flipRefreshSellExpectUnit() {
+    const unitEl = el('rflip-sell-expect-unit');
+    const input = el('rflip-sell-expect');
+    if (!unitEl) return;
+    unitEl.textContent = '单位：' + priceMagnitudeUnit(input ? input.value : 0);
+  }
+
+  function bindFlipPanel() {
+    flipRenderBuyOrders();
+    flipRenderSellOrders();
+    populateFlipBuyBiomeSelect().catch(() => {});
+    populateFlipSellBiomeSelect().catch(() => {});
+    const expectInput = el('rflip-buy-expect');
+    if (expectInput) {
+      expectInput.addEventListener('input', flipRefreshExpectUnit);
+      flipRefreshExpectUnit();
+    }
+    const sellExpectInput = el('rflip-sell-expect');
+    if (sellExpectInput) {
+      sellExpectInput.addEventListener('input', flipRefreshSellExpectUnit);
+      flipRefreshSellExpectUnit();
+    }
+    const addBtn = el('rflip-buy-add');
+    if (addBtn) addBtn.addEventListener('click', () => {
+      const biomeId = (el('rflip-buy-biome') && el('rflip-buy-biome').value) || '';
+      const rarity = (el('rflip-buy-rar') && el('rflip-buy-rar').value) || '';
+      const expectPrice = Math.round(Number(el('rflip-buy-expect') && el('rflip-buy-expect').value) || 0);
+      const quantity = Math.max(1, Math.round(Number(el('rflip-buy-qty') && el('rflip-buy-qty').value) || 1));
+      if (!RARITY_ORDER.includes(rarity)) { flipLog('请选择稀有度'); return; }
+      if (!(expectPrice > 0)) { flipLog('请填写有效的期望买入价'); return; }
+      const dup = (flipState.buyOrders || []).some((o) =>
+        o.biomeId === biomeId && o.rarity === rarity && o.expectPrice === expectPrice && (o.quantity || 1) === quantity
+      );
+      if (dup) { flipLog('已有相同购买单'); return; }
+      flipState.buyOrders.push({
+        id: 'bo_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        biomeId, rarity, expectPrice, quantity,
+        placedBids: [],
+      });
+      saveFlipBuyOrders();
+      flipRenderBuyOrders();
+      flipLog('已添加：' + (biomeId ? biomeIdToTag(biomeId) : '全部地图') + ' · ' + (RARITY_CN[rarity] || rarity)
+        + ' · 期望 ' + fmtGold(expectPrice) + ' · ×' + quantity);
+      if (el('rflip-buy-expect')) el('rflip-buy-expect').value = '';
+      if (el('rflip-buy-qty')) el('rflip-buy-qty').value = '1';
+      flipRefreshExpectUnit();
+      // 运行中：用已缓存报价立刻对照新单（买入模式会复核盘口后再下单）
+      if (flipState.buyRunning) flipEvalCachedQuotes().catch((e) => console.warn(TAG, '[倒鱼] 热判', e));
+    });
+    const sellAdd = el('rflip-sell-add');
+    if (sellAdd) sellAdd.addEventListener('click', () => {
+      const biomeId = (el('rflip-sell-biome') && el('rflip-sell-biome').value) || '';
+      const rarity = (el('rflip-sell-rar') && el('rflip-sell-rar').value) || '';
+      const expectPrice = Math.round(Number(el('rflip-sell-expect') && el('rflip-sell-expect').value) || 0);
+      if (!RARITY_ORDER.includes(rarity)) { flipLog('请选择稀有度'); return; }
+      if (!(expectPrice > 0)) { flipLog('请填写有效的期望卖出价'); return; }
+      const dup = (flipSellState.sellOrders || []).some((o) =>
+        o.biomeId === biomeId && o.rarity === rarity && o.expectPrice === expectPrice
+      );
+      if (dup) { flipLog('已有相同卖出单'); return; }
+      flipSellState.sellOrders.push({
+        id: 'so_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        biomeId, rarity, expectPrice,
+        placedAsks: [],
+      });
+      saveFlipSellOrders();
+      flipRenderSellOrders();
+      flipLog('已添加卖出单：' + (biomeId ? biomeIdToTag(biomeId) : '全部地图') + ' · '
+        + (RARITY_CN[rarity] || rarity) + ' · 期望卖 ' + fmtGold(expectPrice) + ' · 数量=背包全量');
+      if (el('rflip-sell-expect')) el('rflip-sell-expect').value = '';
+      flipRefreshSellExpectUnit();
+    });
+    const buyDetect = el('rflip-buy-detect');
+    const buyStart = el('rflip-buy-start');
+    const buyStop = el('rflip-buy-stop');
+    if (buyDetect) buyDetect.addEventListener('click', () => flipStartDetect());
+    if (buyStart) buyStart.addEventListener('click', () => flipStartBuy());
+    if (buyStop) buyStop.addEventListener('click', () => flipStopBuy());
+    const sellDetect = el('rflip-sell-detect');
+    const sellStart = el('rflip-sell-start');
+    const sellStop = el('rflip-sell-stop');
+    if (sellDetect) sellDetect.addEventListener('click', () => flipStartSellDetect());
+    if (sellStart) sellStart.addEventListener('click', () => flipStartSell());
+    if (sellStop) sellStop.addEventListener('click', () => flipStopSell());
+    const statSync = el('rflip-stat-sync-btn');
+    const statReset = el('rflip-stat-reset');
+    if (statSync) statSync.addEventListener('click', () => {
+      flipLog('正在同步成交账本…');
+      flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+    });
+    if (statReset) statReset.addEventListener('click', () => flipResetStats());
+    refreshFlipStatsUi();
+    refreshFlipUi();
+    // 打开面板时静默拉一次成交基线/增量
+    flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+  }
+
+  function flipClearTimer() {
+    if (flipState.timer) { clearTimeout(flipState.timer); flipState.timer = null; }
+  }
+
+  async function flipRefreshMyOrders() {
+    flipState.myBuyIds = new Set();
+    flipState.myBuyPricesByFish = {};
+    flipState.mySellIds = new Set();
+    flipState.mySellPricesByFish = {};
+    flipLog('拉取自己的挂单（求购/出售）…');
+    const mine = await fetchMyFishOrders();
+    if (!(mine && mine.ok && Array.isArray(mine.orders))) {
+      flipLog('⚠️ 挂单拉取失败(' + ((mine && mine.error) || 'unknown') + ')，本轮无法剔除自家单');
+      return;
+    }
+    let nBuy = 0, nSell = 0;
+    for (const o of mine.orders) {
+      if (!(o && (o.side === 'buy' || o.side === 'sell') && o.status === 'active')) continue;
+      if (!(o.asset && o.asset.fish)) continue;
+      if (!((o.remainingQuantity || 0) > 0)) continue;
+      const fid = o.asset.fish.fishId;
+      if (!fid) continue;
+      const id = String(o.id || o.orderId || '');
+      const p = Number(o.limitUnitPrice);
+      if (o.side === 'buy') {
+        if (id) flipState.myBuyIds.add(id);
+        if (Number.isFinite(p) && p > 0) {
+          if (!flipState.myBuyPricesByFish[fid]) flipState.myBuyPricesByFish[fid] = new Set();
+          flipState.myBuyPricesByFish[fid].add(p);
+        }
+        nBuy += 1;
+      } else {
+        if (id) flipState.mySellIds.add(id);
+        if (Number.isFinite(p) && p > 0) {
+          if (!flipState.mySellPricesByFish[fid]) flipState.mySellPricesByFish[fid] = new Set();
+          flipState.mySellPricesByFish[fid].add(p);
+        }
+        nSell += 1;
+      }
+    }
+    flipLog('已缓存自己的求购 ' + nBuy + ' / 出售 ' + nSell
+      + (mine.incomplete ? '（列表可能不完整）' : '') + '，算价时将剔除');
+  }
+
+  // 从盘口取价：优先按订单 id 剔除自家单；仅有档位时按价格剔除
+  function flipBookSidePrice(ob, fishId, side) {
+    if (!(ob && ob.ok && ob.data)) return null;
+    const d = (ob.data && ob.data.data && typeof ob.data.data === 'object') ? ob.data.data : ob.data;
+    const isBuy = side === 'buy';
+    const myIds = isBuy ? (flipState.myBuyIds || new Set()) : (flipState.mySellIds || new Set());
+    const myPrices = fishId
+      ? (isBuy ? flipState.myBuyPricesByFish : flipState.mySellPricesByFish)[fishId]
+      : null;
+    const orders = isBuy ? d.buyOrders : d.sellOrders;
+    const levels = isBuy ? d.buyLevels : d.sellLevels;
+
+    if (Array.isArray(orders) && orders.length) {
+      let m = null;
+      for (const row of orders) {
+        if (!row) continue;
+        const id = String(row.id || row.orderId || '');
+        if (id && myIds.has(id)) continue;
+        const p = Number(row.limitUnitPrice);
+        if (!(Number.isFinite(p) && p > 0)) continue;
+        if (!id && myPrices && myPrices.has(p)) continue;
+        m = (m == null ? p : (isBuy ? Math.max(m, p) : Math.min(m, p)));
+      }
+      return m;
+    }
+    if (Array.isArray(levels) && levels.length) {
+      let m = null;
+      for (const lvl of levels) {
+        if (!lvl) continue;
+        const p = Number(lvl.unitPrice);
+        if (!(Number.isFinite(p) && p > 0)) continue;
+        if (myPrices && myPrices.has(p)) continue;
+        m = (m == null ? p : (isBuy ? Math.max(m, p) : Math.min(m, p)));
+      }
+      return m;
+    }
+    return null;
+  }
+  function highestBidExcludingMine(ob, fishId) { return flipBookSidePrice(ob, fishId, 'buy'); }
+  function lowestAskExcludingMine(ob, fishId) { return flipBookSidePrice(ob, fishId, 'sell'); }
+
+  // 由刚拉取的 order-book 生成判定用报价（提示 / 真实买入 / 真实挂求购 共用）
+  function flipPriceFromBook(ob, fishId) {
+    return {
+      ask: lowestAskExcludingMine(ob, fishId),
+      bid: highestBidExcludingMine(ob, fishId),
+      amHighestBid: flipIsMyBidHighest(fishId, ob),
+    };
+  }
+
+  /**
+   * 倒鱼动作判定（检测提示 = 买入实操同一条链）。
+   * - canBuy  → 买入（别人最低售价 < 期望）
+   * - canBid  → 挂求购：有人求购则挂最高+1（≤期望）；无人求购则挂期望价；自己已是最高则不挂
+   */
+  function flipJudgeOrder(price, order) {
+    const expect = order && order.expectPrice;
+    if (!(expect > 0) || !price) {
+      return { canBuy: false, canBid: false, expect: expect || 0, bidPrice: 0, bidSkip: 'invalid' };
+    }
+    const canBuy = price.ask != null && price.ask > 0 && price.ask < expect;
+    let canBid = false;
+    let bidPrice = 0;
+    let bidSkip = '';
+    if (price.amHighestBid) {
+      bidSkip = 'already-highest';
+    } else if (price.bid != null && price.bid > 0) {
+      // 已有别人求购：挂 最高+1，且不超过用户期望上限
+      const want = Math.round(price.bid) + 1;
+      if (want <= expect) {
+        canBid = true;
+        bidPrice = want;
+      } else {
+        bidSkip = 'bid-plus-one-over-expect';
+      }
+    } else {
+      // 市场暂无别人求购：按期望价挂
+      canBid = true;
+      bidPrice = Math.round(expect);
+    }
+    return { canBuy, canBid, expect, bidPrice, bidSkip };
+  }
+
+  // 执行前复核：重拉盘口 + flipJudgeOrder（买入模式下单前必走）
+  async function flipConfirmAction(f, order, kind) {
+    const fetched = await fetchOrderBook(f.fishId);
+    if (!(fetched && fetched.ok)) return { ok: false, reason: 'book-fail' };
+    const price = flipPriceFromBook(fetched.ob, f.fishId);
+    const j = flipJudgeOrder(price, order);
+    if (kind === 'buy' && !j.canBuy) return { ok: false, reason: 'stale-or-unmet', price, j };
+    if (kind === 'bid' && !j.canBid) return { ok: false, reason: j.bidSkip || 'stale-or-unmet', price, j };
+    return { ok: true, price, j };
+  }
+
+  function flipRememberMyBid(fishId, price) {
+    if (!fishId || !(price > 0)) return;
+    if (!flipState.myBuyPricesByFish[fishId]) flipState.myBuyPricesByFish[fishId] = new Set();
+    flipState.myBuyPricesByFish[fishId].add(Number(price));
+  }
+
+  function flipBeginRun(mode) {
+    if (!(flipState.buyOrders && flipState.buyOrders.length)) {
+      flipLog('请先添加至少一条购买单');
+      refreshFlipUi();
+      return;
+    }
+    const n = flipState.buyOrders.length;
+    if (mode === 'detect') {
+      if (!window.confirm(
+        '确认启动检测？\n\n'
+        + '将按 ' + n + ' 条购买单扫一轮市场售价/求购价，仅提示、不下单。\n'
+        + '扫完自动结束，无需点停止。'
+      )) return;
+    } else {
+      if (!window.confirm(
+        '确认开始买入？\n\n'
+        + '将按 ' + n + ' 条购买单轮询市场，符合条件时会真实操作：\n'
+        + '· 售价 < 期望 → 按当前售价挂买单（吃货）\n'
+        + '· 有人求购且最高+1 ≤ 期望 → 挂最高+1；无人求购 → 挂期望价\n'
+        + '· 自己的求购被超过且最高+1仍≤期望 → 先撤旧再挂新价\n\n'
+        + '请确认余额与挂单上限充足。'
+      )) return;
+    }
+    flipState.buyRunning = true;
+    flipState.mode = mode;
+    flipState.firstCycle = true;
+    flipState.tipKeys = new Set();
+    flipState.actedKeys = new Set();
+    flipLog((mode === 'buy' ? '开始买入' : '检测') + '已启动 · ' + n + ' 条购买单'
+      + (mode === 'detect' ? ' · 扫完一轮自动结束' : ' · 首轮尽快拉全量，之后摊在 5 分钟内'));
+    refreshFlipUi();
+    (async () => {
+      await flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+      await flipRefreshMyOrders();
+      if (!flipState.buyRunning) return;
+      await flipRebuildQueueAndArm(true);
+    })().catch((e) => console.warn(TAG, '[倒鱼] 启动', e));
+  }
+  function flipStartDetect() { flipBeginRun('detect'); }
+  function flipStartBuy() { flipBeginRun('buy'); }
+  function flipStopBuy(doneMsg) {
+    flipState.buyRunning = false;
+    flipState.mode = null;
+    flipClearTimer();
+    flipState.queue = [];
+    flipState.queueIdx = 0;
+    flipState.cycleStartAt = 0;
+    flipLog(doneMsg || '已停止');
+    refreshFlipUi();
+  }
+
+  // ---------- 卖出检测（只提示） ----------
+  function flipSellClearTimer() {
+    if (flipSellState.timer) { clearTimeout(flipSellState.timer); flipSellState.timer = null; }
+  }
+
+  async function flipLoadInventoryQtyMap() {
+    const map = {};
+    let cursor = null;
+    for (let page = 0; page < 30; page++) {
+      let path = '/api/inventory/fish?limit=200';
+      if (cursor) path += '&cursor=' + encodeURIComponent(cursor);
+      const inv = await getJSON(path);
+      if (!(inv && inv.ok)) {
+        if (!page) flipLog('⚠️ 背包读取失败(' + ((inv && inv.error) || 'unknown') + ')');
+        break;
+      }
+      const raw = inv.data;
+      const fish = Array.isArray(raw && raw.fish) ? raw.fish
+        : (Array.isArray(raw && raw.data && raw.data.fish) ? raw.data.fish
+          : (Array.isArray(raw) ? raw : []));
+      for (const f of fish) {
+        if (!(f && f.fishId)) continue;
+        const q = Math.max(0, Math.round(Number(f.quantity) || 0));
+        if (q > 0) map[f.fishId] = (map[f.fishId] || 0) + q;
+      }
+      const next = raw && (raw.nextCursor != null ? raw.nextCursor
+        : (raw.data && raw.data.nextCursor != null ? raw.data.nextCursor : null));
+      const nextStr = (next != null && next !== '') ? String(next) : '';
+      if (!nextStr || !fish.length || fish.length < 200) break;
+      cursor = nextStr;
+      await sleep(200);
+    }
+    return map;
+  }
+
+  function flipSellOrdersMatchFish(f) {
+    return (flipSellState.sellOrders || []).filter((o) =>
+      o.rarity === f.rarity && (!o.biomeId || o.biomeId === f.biomeId)
+    );
+  }
+
+  // 自己是否已是该鱼最低售价
+  function flipIsMyAskLowest(fishId, ob) {
+    const set = flipState.mySellPricesByFish && flipState.mySellPricesByFish[fishId];
+    if (!(set && set.size)) return false;
+    let myMin = null;
+    for (const p of set) myMin = (myMin == null ? p : Math.min(myMin, p));
+    if (!(myMin > 0)) return false;
+    const bookLow = lowestAskFromBook(ob);
+    if (bookLow == null) return true;
+    return myMin <= bookLow;
+  }
+
+  function flipSellPriceFromBook(ob, fishId) {
+    return {
+      ask: lowestAskExcludingMine(ob, fishId),
+      amLowestAsk: flipIsMyAskLowest(fishId, ob),
+    };
+  }
+
+  /**
+   * 卖出判定（检测提示 = 真实挂售同一条链）
+   * 别人最低售价 > 期望 → 可挂售，挂价 = 最低售价 - 1（且 ≥ 期望）
+   */
+  function flipJudgeSellOrder(price, order) {
+    const expect = order && order.expectPrice;
+    if (!(expect > 0) || !price) {
+      return { canSell: false, expect: expect || 0, sellPrice: 0, skip: 'invalid' };
+    }
+    if (price.amLowestAsk) return { canSell: false, expect, sellPrice: 0, skip: 'already-lowest' };
+    if (!(price.ask != null && price.ask > 0)) return { canSell: false, expect, sellPrice: 0, skip: 'no-market-ask' };
+    if (!(price.ask > expect)) return { canSell: false, expect, sellPrice: 0, skip: 'ask-not-above-expect' };
+    const want = Math.round(price.ask) - 1;
+    if (want < expect) return { canSell: false, expect, sellPrice: 0, skip: 'undercut-below-expect' };
+    return { canSell: true, expect, sellPrice: want, skip: '' };
+  }
+
+  function flipPlacedAsksOnFish(so, fishId) {
+    const list = (so && Array.isArray(so.placedAsks)) ? so.placedAsks : [];
+    if (!fishId) return list.filter((p) => p && p.id);
+    return list.filter((p) => p && p.id && p.fishId === fishId);
+  }
+
+  function flipAttachPlacedAsk(soId, rec) {
+    const oid = String((rec && rec.id) || '');
+    if (!oid || !soId) return;
+    const so = (flipSellState.sellOrders || []).find((x) => x.id === soId);
+    if (!so) return;
+    if (!Array.isArray(so.placedAsks)) so.placedAsks = [];
+    const i = so.placedAsks.findIndex((p) => p && p.id === oid);
+    const row = {
+      id: oid,
+      fishId: String((rec && rec.fishId) || ''),
+      price: Math.round(Number((rec && rec.price) || 0)),
+      quantity: Math.max(1, Math.round(Number((rec && rec.quantity) || 1))),
+    };
+    if (i >= 0) so.placedAsks[i] = row;
+    else so.placedAsks.push(row);
+    saveFlipSellOrders();
+  }
+
+  function flipRememberMyAsk(fishId, price) {
+    if (!fishId || !(price > 0)) return;
+    if (!flipState.mySellPricesByFish[fishId]) flipState.mySellPricesByFish[fishId] = new Set();
+    flipState.mySellPricesByFish[fishId].add(Number(price));
+  }
+
+  async function flipRegisterPlacedSell(soId, fishId, limitUnitPrice, quantity, knownId) {
+    let oid = String(knownId || '');
+    if (!oid) {
+      await sleep(250);
+      const mine = await fetchMyFishOrders();
+      if (mine && mine.ok && Array.isArray(mine.orders)) {
+        const qty = Math.max(1, Math.round(Number(quantity) || 1));
+        const price = Number(limitUnitPrice);
+        const hit = mine.orders.find((o) =>
+          o && o.side === 'sell' && o.status === 'active'
+          && (o.remainingQuantity || 0) > 0
+          && o.asset && o.asset.fish && o.asset.fish.fishId === fishId
+          && Number(o.limitUnitPrice) === price
+          && Number(o.remainingQuantity || o.quantity || 0) >= qty
+        );
+        if (hit) oid = String(hit.id || hit.orderId || '');
+      }
+    }
+    if (oid) {
+      flipAttachPlacedAsk(soId, { id: oid, fishId, price: limitUnitPrice, quantity });
+      flipState.mySellIds.add(oid);
+    }
+    flipRememberFlipOrder('sell', oid, fishId, limitUnitPrice, quantity);
+    return oid;
+  }
+
+  async function flipConfirmSellAction(f, order) {
+    const fetched = await fetchOrderBook(f.fishId);
+    if (!(fetched && fetched.ok)) return { ok: false, reason: 'book-fail' };
+    const price = flipSellPriceFromBook(fetched.ob, f.fishId);
+    const j = flipJudgeSellOrder(price, order);
+    if (!j.canSell) return { ok: false, reason: j.skip || 'stale-or-unmet', price, j };
+    return { ok: true, price, j };
+  }
+
+  async function flipSellTargetFishList() {
+    if (!(flipSellState.sellOrders && flipSellState.sellOrders.length)) return [];
+    const all = await ensureAllFish();
+    const byId = new Map(all.map((f) => [f.fishId, f]));
+    const inv = flipSellState.invQty || {};
+    const seen = new Set();
+    const out = [];
+    for (const f of all) {
+      if (!flipSellOrdersMatchFish(f).length) continue;
+      const qty = Math.max(0, Math.round(Number(inv[f.fishId]) || 0));
+      if (!(qty > 0)) continue;
+      if (seen.has(f.fishId)) continue;
+      seen.add(f.fishId);
+      out.push({ ...f, quantity: qty });
+    }
+    // 已自动挂售、库存可能为 0 的鱼：仍入队，便于被压价后跟价
+    for (const so of (flipSellState.sellOrders || [])) {
+      for (const p of (so.placedAsks || [])) {
+        if (!(p && p.id && p.fishId) || seen.has(p.fishId)) continue;
+        const parsed = parseFishId(p.fishId);
+        if (parsed.rarity !== so.rarity) continue;
+        if (so.biomeId && parsed.biomeId !== so.biomeId) continue;
+        const base = byId.get(p.fishId) || {
+          fishId: p.fishId,
+          name: p.fishId,
+          rarity: parsed.rarity,
+          biomeId: parsed.biomeId,
+          mapTag: parsed.mapTag,
+        };
+        const bag = Math.max(0, Math.round(Number(inv[p.fishId]) || 0));
+        const listed = Math.max(1, Math.round(Number(p.quantity) || 1));
+        seen.add(p.fishId);
+        out.push({ ...base, quantity: bag > 0 ? bag : listed, listedOnly: bag <= 0 });
+      }
+    }
+    return out;
+  }
+
+  function flipStopSell(doneMsg) {
+    flipSellState.running = false;
+    flipSellState.mode = null;
+    flipSellClearTimer();
+    flipSellState.queue = [];
+    flipSellState.queueIdx = 0;
+    flipSellState.cycleStartAt = 0;
+    flipLog(doneMsg || '卖出已停止');
+    refreshFlipUi();
+  }
+
+  function flipBeginSellRun(mode) {
+    if (!(flipSellState.sellOrders && flipSellState.sellOrders.length)) {
+      flipLog('请先添加至少一条卖出单');
+      refreshFlipUi();
+      return;
+    }
+    const n = flipSellState.sellOrders.length;
+    if (mode === 'detect') {
+      if (!window.confirm(
+        '确认启动卖出检测？\n\n'
+        + '将按 ' + n + ' 条卖出单扫一轮（背包有货 / 已自动挂售的鱼）。\n'
+        + '别人最低售价 > 期望 → 提示可挂售（建议价=最低售价-1）。\n'
+        + '只提示、不下单；扫完自动结束。'
+      )) return;
+    } else {
+      if (!window.confirm(
+        '确认开始卖出？\n\n'
+        + '将按 ' + n + ' 条卖出单轮询市场，符合条件时会真实挂售：\n'
+        + '· 别人最低售价 > 期望 → 按最低售价-1 挂卖单（数量=背包全量）\n'
+        + '· 自己的卖单被压价且最低-1仍≥期望 → 先撤旧再挂新价\n\n'
+        + '请确认挂单上限充足。'
+      )) return;
+    }
+    flipSellState.running = true;
+    flipSellState.mode = mode;
+    flipSellState.firstCycle = true;
+    flipSellState.tipKeys = new Set();
+    flipSellState.actedKeys = new Set();
+    flipSellState.quotes = {};
+    flipLog((mode === 'sell' ? '开始卖出' : '卖出检测') + '已启动 · ' + n + ' 条卖出单'
+      + (mode === 'detect' ? ' · 扫完一轮自动结束' : ' · 首轮尽快拉全量，之后摊在 5 分钟内'));
+    refreshFlipUi();
+    (async () => {
+      await flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+      flipLog('拉取背包库存…');
+      flipSellState.invQty = await flipLoadInventoryQtyMap();
+      flipLog('背包有货鱼种 ' + Object.keys(flipSellState.invQty).length + ' 种');
+      await flipRefreshMyOrders();
+      if (!flipSellState.running) return;
+      await flipSellRebuildQueueAndArm(true);
+    })().catch((e) => console.warn(TAG, '[倒鱼] 卖出启动', e));
+  }
+  function flipStartSellDetect() { flipBeginSellRun('detect'); }
+  function flipStartSell() { flipBeginSellRun('sell'); }
+
+  async function flipSellRebuildQueueAndArm(resetCycle) {
+    const list = await flipSellTargetFishList();
+    flipSellState.queue = list;
+    if (resetCycle || !flipSellState.cycleStartAt || flipSellState.queueIdx >= list.length) {
+      flipSellState.queueIdx = 0;
+      flipSellState.cycleStartAt = Date.now();
+      flipSellState.cycleNo += 1;
+      flipSellState.tipKeys = new Set();
+    }
+    if (!list.length) {
+      flipSellState.lastNote = '无匹配鱼种（检查卖出单/背包库存）';
+      flipLog('卖出队列为空：无「匹配卖出单且（有货或已挂售）」的鱼');
+      refreshFlipUi();
+      if (flipSellState.mode === 'detect') {
+        flipStopSell('卖出检测结束：无匹配鱼种');
+      } else {
+        flipSellState.timer = setTimeout(() => {
+          flipSellRebuildQueueAndArm(true).catch((e) => console.warn(TAG, '[倒鱼] 卖出重建', e));
+        }, 3000);
+      }
+      return;
+    }
+    const gap = flipSellState.firstCycle
+      ? FLIP_FIRST_GAP_MS
+      : Math.max(FLIP_GAP_MIN_MS, Math.floor(FLIP_POLL_MS / list.length));
+    flipLog('卖出第 ' + flipSellState.cycleNo + ' 轮'
+      + (flipSellState.firstCycle ? '（首轮快扫）' : '')
+      + '：共 ' + list.length + ' 种，约每 ' + Math.round(gap / 1000) + 's 一条'
+      + (flipSellState.firstCycle ? '' : '（摊在 5 分钟内）'));
+    flipSellArmNext(0);
+  }
+
+  function flipSellArmNext(extraDelayMs) {
+    flipSellClearTimer();
+    if (!flipSellState.running) return;
+    const n = flipSellState.queue.length;
+    if (!n) {
+      if (flipSellState.mode === 'detect') {
+        flipStopSell('卖出检测结束：队列为空');
+        return;
+      }
+      flipSellState.timer = setTimeout(() => {
+        flipSellRebuildQueueAndArm(true).catch((e) => console.warn(TAG, '[倒鱼] 卖出重建', e));
+      }, 3000);
+      return;
+    }
+    if (flipSellState.queueIdx >= n) {
+      const took = flipSellState.cycleStartAt ? Math.round((Date.now() - flipSellState.cycleStartAt) / 1000) : 0;
+      const tips = flipSellState.tipKeys ? flipSellState.tipKeys.size : 0;
+      const acts = flipSellState.actedKeys ? flipSellState.actedKeys.size : 0;
+      flipSellState.lastNote = '卖出第' + flipSellState.cycleNo + '轮完成 · ' + n + '种 · ' + took + 's · 提示'
+        + tips + ' · 已挂' + acts;
+      flipLog(flipSellState.lastNote);
+      flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+      if (flipSellState.mode === 'detect') {
+        if (!tips) {
+          flipLog('本轮无卖出提示：需别人最低售价 > 期望，且自己还不是最低售价；挂价建议=最低售价-1');
+        }
+        flipStopSell('卖出检测完成（已扫一轮）');
+        return;
+      }
+      flipSellState.firstCycle = false;
+      flipSellState.timer = setTimeout(() => {
+        flipSellRebuildQueueAndArm(true).catch((e) => console.warn(TAG, '[倒鱼] 卖出下一轮', e));
+      }, 800);
+      return;
+    }
+    const slot = flipSellState.firstCycle
+      ? FLIP_FIRST_GAP_MS
+      : Math.max(FLIP_GAP_MIN_MS, Math.floor(FLIP_POLL_MS / n));
+    const idealAt = flipSellState.firstCycle
+      ? Date.now()
+      : ((flipSellState.cycleStartAt || Date.now()) + flipSellState.queueIdx * slot);
+    const wait = Math.max(flipSellState.firstCycle ? FLIP_FIRST_GAP_MS : 0, idealAt - Date.now()) + (extraDelayMs || 0);
+    flipSellState.timer = setTimeout(() => {
+      flipSellSampleOne().catch((e) => console.warn(TAG, '[倒鱼] 卖出 sample', e));
+    }, wait);
+    refreshFlipUi();
+  }
+
+  async function flipSellEvalTips(f, price) {
+    const rules = flipSellOrdersMatchFish(f);
+    if (!rules.length || !price) return;
+    const name = (f.mapTag || '') + (f.name || f.fishId);
+    const live = flipSellState.mode === 'sell';
+    for (const o of rules) {
+      const j = flipJudgeSellOrder(price, o);
+      if (!j.canSell) continue;
+      const oldOnFish = flipPlacedAsksOnFish(o, f.fishId);
+      const isChase = oldOnFish.length > 0 && !price.amLowestAsk;
+      const bagQty = Math.max(0, Math.round(Number((flipSellState.invQty || {})[f.fishId]) || 0));
+      const listedQty = oldOnFish.reduce((s, p) => s + Math.max(0, Math.round(Number(p.quantity) || 0)), 0);
+      const qty = Math.max(1, bagQty > 0 ? bagQty : (listedQty || Math.round(Number(f.quantity) || 1)));
+      const key = 'sell:' + f.fishId + ':' + o.id + ':' + j.sellPrice;
+      const tag = (o.biomeId ? biomeIdToTag(o.biomeId) : '全图') + '·' + (RARITY_CN[o.rarity] || o.rarity);
+
+      if (live) {
+        if (flipSellState.actedKeys.has(key)) continue;
+        if (isChase) {
+          flipLog('🔄 卖单被压价 ' + name + ' → 撤旧后跟价 ' + fmtGold(j.sellPrice) + '…');
+          const delR = await flipDeletePlacedAskRows(o, oldOnFish, '跟价撤旧卖');
+          if (delR.failN) {
+            flipLog('⏭ 卖出跟价中止 ' + name + '：旧单未全部撤下');
+            await sleep(300);
+            continue;
+          }
+          // 撤单后鱼回背包：刷新该鱼可用数量
+          flipSellState.invQty[f.fishId] = (flipSellState.invQty[f.fishId] || 0) + listedQty;
+        } else {
+          if (!(bagQty > 0)) {
+            // 无库存且非跟价：跳过
+            continue;
+          }
+          flipLog('🏷️ 可挂售 ' + name + ' ×' + qty + ' → ' + fmtGold(j.sellPrice) + '（最低-1）→ 复核下单…');
+        }
+        const conf = await flipConfirmSellAction(f, o);
+        if (!(conf && conf.ok)) {
+          flipLog('⏭ ' + (isChase ? '跟价' : '挂售') + '跳过 ' + name + '（' + ((conf && conf.reason) || 'unmet') + '）');
+          await sleep(200);
+          continue;
+        }
+        const sp = conf.j.sellPrice;
+        const useQty = Math.max(1, Math.round(Number((flipSellState.invQty || {})[f.fishId]) || qty));
+        const res = await placeSellOrder(f.fishId, f.name || f.fishId, sp, useQty);
+        if (res && res.ok) {
+          flipSellState.actedKeys.add(key);
+          flipRememberMyAsk(f.fishId, sp);
+          await flipRegisterPlacedSell(o.id, f.fishId, sp, useQty, res.orderId);
+          flipSellState.invQty[f.fishId] = 0;
+          flipLog('✅ ' + (isChase ? '已跟价挂售 ' : '已挂售 ') + name + ' ×' + useQty + ' @' + fmtGold(sp) + '（' + tag + '）');
+          flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+        } else {
+          flipLog('❌ ' + (isChase ? '跟价挂售' : '挂售') + '失败 ' + name + ': ' + ((res && res.msg) || 'unknown'));
+        }
+        await sleep(300);
+      } else {
+        if (flipSellState.tipKeys.has(key)) continue;
+        flipSellState.tipKeys.add(key);
+        if (isChase) {
+          flipLog('🔄 可跟价挂售 ' + name + ' ×' + qty + ' 已被压价 → 建议撤旧后挂 '
+            + fmtGold(j.sellPrice) + '（最低-1，期望下限 ' + fmtGold(j.expect) + '）（' + tag + '）');
+        } else {
+          flipLog('🏷️ 可挂售 ' + name + ' ×' + qty + ' 别人最低售价 ' + fmtGold(price.ask)
+            + ' > 期望 ' + fmtGold(j.expect)
+            + ' → 建议挂 ' + fmtGold(j.sellPrice) + '（最低-1）'
+            + '（' + tag + '）');
+        }
+      }
+    }
+  }
+
+  async function flipSellSampleOne() {
+    if (!flipSellState.running) return;
+    if (flipSellState.sampling) { flipSellArmNext(300); return; }
+    if (!flipSellState.queue.length) {
+      await flipSellRebuildQueueAndArm(true);
+      return;
+    }
+    const f = flipSellState.queue[flipSellState.queueIdx];
+    if (!f) { flipSellState.queueIdx = flipSellState.queue.length; flipSellArmNext(0); return; }
+
+    flipSellState.sampling = true;
+    refreshFlipUi();
+    try {
+      const fetched = await fetchOrderBook(f.fishId);
+      if (fetched && fetched.ok) {
+        const price = flipSellPriceFromBook(fetched.ob, f.fishId);
+        flipSellState.quotes[f.fishId] = {
+          ask: price.ask, amLowestAsk: price.amLowestAsk,
+          t: Date.now(), name: f.name, rarity: f.rarity, mapTag: f.mapTag || '', quantity: f.quantity,
+        };
+        flipSellState.lastSampleAt = Date.now();
+        flipSellState.lastNote = (f.mapTag || '') + (f.name || f.fishId)
+          + ' 卖' + fmtGold(price.ask) + ' ×' + (f.quantity || 0)
+          + (price.amLowestAsk ? ' ·已最低售' : '')
+          + ' (' + (flipSellState.queueIdx + 1) + '/' + flipSellState.queue.length + ')';
+        await flipSellEvalTips(f, price);
+      } else {
+        flipSellState.lastNote = '失败 ' + (f.name || f.fishId)
+          + ' (' + (flipSellState.queueIdx + 1) + '/' + flipSellState.queue.length + ')';
+      }
+    } catch (_e) {
+      flipSellState.lastNote = '异常 ' + (f.name || f.fishId);
+    } finally {
+      flipSellState.sampling = false;
+      flipSellState.queueIdx += 1;
+      refreshFlipUi();
+      flipSellArmNext(0);
+    }
+  }
+
+  function flipOrdersMatchFish(f) {
+    return (flipState.buyOrders || []).filter((o) =>
+      o.rarity === f.rarity && (!o.biomeId || o.biomeId === f.biomeId)
+    );
+  }
+
+  async function flipTargetFishList() {
+    if (!(flipState.buyOrders && flipState.buyOrders.length)) return [];
+    const all = await ensureAllFish();
+    const seen = new Set();
+    const out = [];
+    for (const f of all) {
+      if (!flipOrdersMatchFish(f).length) continue;
+      if (seen.has(f.fishId)) continue;
+      seen.add(f.fishId);
+      out.push(f);
+    }
+    return out;
+  }
+
+  async function flipRebuildQueueAndArm(resetCycle) {
+    const list = await flipTargetFishList();
+    flipState.queue = list;
+    if (resetCycle || !flipState.cycleStartAt || flipState.queueIdx >= list.length) {
+      flipState.queueIdx = 0;
+      flipState.cycleStartAt = Date.now();
+      flipState.cycleNo += 1;
+      flipState.tipKeys = new Set();
+      if (list.length) {
+        if (flipState.firstCycle) {
+          flipLog('第 ' + flipState.cycleNo + ' 轮（首轮快扫）：共 ' + list.length + ' 种鱼，约每 ' + (FLIP_FIRST_GAP_MS / 1000) + 's 一条');
+        } else {
+          const gap = Math.max(FLIP_GAP_MIN_MS, Math.floor(FLIP_POLL_MS / list.length));
+          flipLog('第 ' + flipState.cycleNo + ' 轮：共 ' + list.length + ' 种，约每 ' + Math.round(gap / 1000) + 's 一条（摊在 5 分钟内）');
+        }
+      }
+    }
+    if (!list.length) {
+      flipState.lastNote = '无匹配鱼种（检查购买单的地图/稀有度）';
+      flipLog('队列为空：购买单未匹配到任何鱼');
+      refreshFlipUi();
+      if (flipState.mode === 'detect') flipStopBuy('检测结束：无匹配鱼种');
+      return;
+    }
+    flipArmNext(0);
+  }
+
+  function flipArmNext(extraDelayMs) {
+    flipClearTimer();
+    if (!flipState.buyRunning) return;
+    const n = flipState.queue.length;
+    if (!n) {
+      if (flipState.mode === 'detect') {
+        flipStopBuy('检测结束：队列为空');
+        return;
+      }
+      flipState.timer = setTimeout(() => {
+        flipRebuildQueueAndArm(true).catch((e) => console.warn(TAG, '[倒鱼] 重建队列', e));
+      }, 3000);
+      return;
+    }
+    if (flipState.queueIdx >= n) {
+      flipOnCycleComplete();
+      // 检测：只扫一轮，完成后自动结束
+      if (flipState.mode === 'detect') {
+        flipStopBuy('检测完成（已扫一轮）');
+        return;
+      }
+      flipState.queueIdx = 0;
+      flipState.cycleStartAt = Date.now();
+      flipState.cycleNo += 1;
+      flipState.firstCycle = false;
+      flipState.tipKeys = new Set();
+      const gap = Math.max(FLIP_GAP_MIN_MS, Math.floor(FLIP_POLL_MS / n));
+      flipLog('第 ' + flipState.cycleNo + ' 轮开始：共 ' + n + ' 种，间隔约 ' + Math.round(gap / 1000) + 's');
+    }
+    const slot = flipState.firstCycle
+      ? FLIP_FIRST_GAP_MS
+      : Math.max(FLIP_GAP_MIN_MS, Math.floor(FLIP_POLL_MS / n));
+    const idealAt = flipState.firstCycle
+      ? Date.now() // 首轮：打完一条尽快下一条（仍受 FLIP_FIRST_GAP 约束）
+      : ((flipState.cycleStartAt || Date.now()) + flipState.queueIdx * slot);
+    const wait = Math.max(flipState.firstCycle ? FLIP_FIRST_GAP_MS : 0, idealAt - Date.now()) + (extraDelayMs || 0);
+    flipState.timer = setTimeout(() => {
+      flipSampleOne().catch((e) => console.warn(TAG, '[倒鱼] sample', e));
+    }, wait);
+    refreshFlipUi();
+  }
+
+  // 自己是否已是该鱼最高求购（盘口不含本人单时：我的价 >= 盘口最高 也算）
+  function flipIsMyBidHighest(fishId, ob) {
+    const set = flipState.myBuyPricesByFish && flipState.myBuyPricesByFish[fishId];
+    if (!(set && set.size)) return false;
+    let myMax = null;
+    for (const p of set) myMax = (myMax == null ? p : Math.max(myMax, p));
+    if (!(myMax > 0)) return false;
+    const bookHigh = highestBidFromBook(ob);
+    // 盘口看不到任何求购：若我已有活动求购，视为我仍占最高（避免重复挂）
+    if (bookHigh == null) return true;
+    return myMax >= bookHigh;
+  }
+
+  // 检测=只提示；买入=复核盘口后真实挂买单/求购（与提示同一判定）
+  async function flipEvalTips(f, price) {
+    const rules = flipOrdersMatchFish(f);
+    if (!rules.length || !price) return;
+    const name = (f.mapTag || '') + (f.name || f.fishId);
+    const live = flipState.mode === 'buy';
+    for (const o of rules) {
+      const j = flipJudgeOrder(price, o);
+      const tag = (o.biomeId ? biomeIdToTag(o.biomeId) : '全图') + '·' + (RARITY_CN[o.rarity] || o.rarity);
+
+      if (j.canBuy) {
+        const key = 'buy:' + f.fishId + ':' + o.id;
+        if (live) {
+          if (!flipState.actedKeys.has(key)) {
+            flipLog('💡 可购入 ' + name + ' 售价 ' + fmtGold(price.ask) + ' < 期望 ' + fmtGold(j.expect) + ' → 复核下单…');
+            const conf = await flipConfirmAction(f, o, 'buy');
+            if (!(conf && conf.ok)) {
+              flipLog('⏭ 买入跳过 ' + name + '（' + ((conf && conf.reason) || 'unmet') + '）');
+            } else {
+              const qty = Math.max(1, Math.round(Number(o.quantity) || 1));
+              const res = await placeBuyOrder(f.fishId, f.name || f.fishId, conf.price.ask, qty);
+              if (res && res.ok) {
+                flipState.actedKeys.add(key);
+                // 若未完全成交、仍留挂单，登记 id 供撤单（吃货成交则通常无活动单）
+                await flipRegisterPlacedBuy(o.id, f.fishId, conf.price.ask, qty, res.orderId);
+                flipLog('✅ 已买入 ' + name + ' ×' + qty + ' @' + fmtGold(conf.price.ask) + '（' + tag + '）');
+                flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+              } else {
+                flipLog('❌ 买入失败 ' + name + ': ' + ((res && res.msg) || 'unknown'));
+              }
+              await sleep(300);
+            }
+          }
+        } else if (!flipState.tipKeys.has(key)) {
+          flipState.tipKeys.add(key);
+          const qty = Math.max(1, Math.round(Number(o.quantity) || 1));
+          flipLog('💡 可购入 ' + name + ' ×' + qty + ' 售价 ' + fmtGold(price.ask) + ' < 期望 ' + fmtGold(j.expect) + '（' + tag + '）');
+        }
+      }
+
+      if (j.canBid) {
+        const qty = Math.max(1, Math.round(Number(o.quantity) || 1));
+        const oldOnFish = flipPlacedBidsOnFish(o, f.fishId);
+        const isChase = oldOnFish.length > 0 && !price.amHighestBid;
+        // 按目标挂价去重：被超过后目标价变化可再跟；同价不重复刷
+        const key = 'bid:' + f.fishId + ':' + o.id + ':' + j.bidPrice;
+        if (live) {
+          if (!flipState.actedKeys.has(key)) {
+            if (isChase) {
+              flipLog('🔄 求购被超过 ' + name + ' → 撤旧单后跟价 ' + fmtGold(j.bidPrice) + '…');
+              const delR = await flipDeletePlacedBidRows(o, oldOnFish, '跟价撤旧');
+              if (delR.failN) {
+                flipLog('⏭ 跟价中止 ' + name + '：旧单未全部撤下');
+                await sleep(300);
+                continue;
+              }
+            } else {
+              flipLog('📌 可挂求购 ' + name + ' ×' + qty + ' → ' + fmtGold(j.bidPrice) + '（最高+1）→ 复核下单…');
+            }
+            const conf = await flipConfirmAction(f, o, 'bid');
+            if (!(conf && conf.ok)) {
+              flipLog('⏭ ' + (isChase ? '跟价' : '挂求购') + '跳过 ' + name + '（' + ((conf && conf.reason) || 'unmet') + '）');
+            } else {
+              const bp = conf.j.bidPrice;
+              const res = await placeBuyOrder(f.fishId, f.name || f.fishId, bp, qty);
+              if (res && res.ok) {
+                flipState.actedKeys.add(key);
+                flipRememberMyBid(f.fishId, bp);
+                await flipRegisterPlacedBuy(o.id, f.fishId, bp, qty, res.orderId);
+                flipLog('✅ ' + (isChase ? '已跟价求购 ' : '已挂求购 ') + name + ' ×' + qty + ' @' + fmtGold(bp) + '（' + tag + '）');
+                flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+              } else {
+                flipLog('❌ ' + (isChase ? '跟价' : '挂求购') + '失败 ' + name + ': ' + ((res && res.msg) || 'unknown'));
+              }
+              await sleep(300);
+            }
+          }
+        } else if (!flipState.tipKeys.has(key)) {
+          flipState.tipKeys.add(key);
+          if (isChase) {
+            flipLog('🔄 可跟价 ' + name + ' ×' + qty + ' 已被超过 → 建议撤旧后挂 '
+              + fmtGold(j.bidPrice) + '（最高+1，期望上限 ' + fmtGold(j.expect) + '）（' + tag + '）');
+          } else if (price.bid != null && price.bid > 0) {
+            flipLog('📌 可挂求购 ' + name + ' ×' + qty + ' 当前求购 ' + fmtGold(price.bid)
+              + ' → 建议挂 ' + fmtGold(j.bidPrice) + '（最高+1，期望上限 ' + fmtGold(j.expect) + '）'
+              + '（' + tag + '）');
+          } else {
+            flipLog('📌 可挂求购 ' + name + ' ×' + qty + ' 暂无别人求购 → 建议挂期望价 '
+              + fmtGold(j.bidPrice) + '（' + tag + '）');
+          }
+        }
+      }
+    }
+  }
+
+  // 用本轮已拉到的缓存报价，立刻对照当前全部购买单（加单后热判；买入模式会再复核）
+  async function flipEvalCachedQuotes() {
+    if (!flipState.tipKeys) flipState.tipKeys = new Set();
+    if (!flipState.actedKeys) flipState.actedKeys = new Set();
+    const quotes = flipState.quotes || {};
+    let n = 0;
+    for (const fishId of Object.keys(quotes)) {
+      if (!flipState.buyRunning) break;
+      const q = quotes[fishId];
+      if (!q) continue;
+      const f = { fishId, name: q.name, rarity: q.rarity, mapTag: q.mapTag || '', biomeId: parseFishId(fishId).biomeId };
+      if (!flipOrdersMatchFish(f).length) continue;
+      const beforeTip = flipState.tipKeys.size;
+      const beforeAct = flipState.actedKeys.size;
+      await flipEvalTips(f, { ask: q.ask, bid: q.bid, amHighestBid: !!q.amHighestBid });
+      if (flipState.tipKeys.size > beforeTip || flipState.actedKeys.size > beforeAct) n += 1;
+    }
+    if (n) flipLog('已用缓存报价对照新单，命中 ' + n + ' 种鱼');
+  }
+
+  function flipOnCycleComplete() {
+    const n = flipState.queue.length;
+    const took = flipState.cycleStartAt ? Math.round((Date.now() - flipState.cycleStartAt) / 1000) : 0;
+    const tips = flipState.tipKeys ? flipState.tipKeys.size : 0;
+    flipState.lastNote = '第' + flipState.cycleNo + '轮完成 · ' + n + '种 · ' + took + 's · 提示' + tips + '条';
+    flipLog(flipState.lastNote);
+    if (!tips) {
+      flipLog('本轮无提示：购入需「别人售价 < 期望」；求购需「自己还不是最高」且（有人求购时最高+1≤期望 / 无人求购则挂期望价）');
+    }
+    flipSyncTradesFromApi().catch((e) => console.warn(TAG, '[倒鱼] 账本同步', e));
+    refreshFlipUi();
+  }
+
+  async function flipSampleOne() {
+    if (!flipState.buyRunning) return;
+    if (flipState.sampling) { flipArmNext(300); return; }
+    if (!flipState.queue.length) {
+      await flipRebuildQueueAndArm(true);
+      return;
+    }
+    const f = flipState.queue[flipState.queueIdx];
+    if (!f) { flipState.queueIdx = flipState.queue.length; flipArmNext(0); return; }
+
+    flipState.sampling = true;
+    refreshFlipUi();
+    try {
+      const fetched = await fetchOrderBook(f.fishId);
+      if (fetched && fetched.ok) {
+        const price = flipPriceFromBook(fetched.ob, f.fishId);
+        flipState.quotes[f.fishId] = {
+          ask: price.ask, bid: price.bid, amHighestBid: price.amHighestBid,
+          t: Date.now(), name: f.name, rarity: f.rarity, mapTag: f.mapTag || '',
+        };
+        flipState.lastSampleAt = Date.now();
+        flipState.lastNote = (f.mapTag || '') + (f.name || f.fishId)
+          + ' 卖' + fmtGold(price.ask) + ' 求' + fmtGold(price.bid)
+          + (price.amHighestBid ? ' ·已最高求购' : '')
+          + ' (' + (flipState.queueIdx + 1) + '/' + flipState.queue.length + ')';
+        await flipEvalTips(f, price);
+      } else {
+        flipState.lastNote = '失败 ' + (f.name || f.fishId) + ' (' + (flipState.queueIdx + 1) + '/' + flipState.queue.length + ')';
+      }
+    } catch (_e) {
+      flipState.lastNote = '异常 ' + (f.name || f.fishId);
+    } finally {
+      flipState.sampling = false;
+      flipState.queueIdx += 1;
+      refreshFlipUi();
+      flipArmNext(0);
+    }
   }
 
   function bargainPanelHtml() {
@@ -3365,7 +5275,17 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
     if (!sorted.length && listBox) listBox.innerHTML = '<div style="color:#aaa;padding:6px;">该稀有度暂无鱼在售</div>';
   }
 
-  // 发布一笔求购单（数量 1）；返回 { ok, msg }
+  function parseMarketOrderIdFromPost(res) {
+    if (!(res && res.ok && res.status === 200)) return '';
+    try {
+      const raw = typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
+      const o = (raw && raw.data && typeof raw.data === 'object') ? raw.data : raw;
+      const id = o && (o.id || o.orderId);
+      return id != null ? String(id) : '';
+    } catch (_e) { return ''; }
+  }
+
+  // 发布一笔求购/买单；返回 { ok, msg, orderId }
   async function placeBuyOrder(fishId, name, limitUnitPrice, quantity) {
     quantity = Math.max(1, Math.round(Number(quantity) || 1));
     try {
@@ -3378,10 +5298,16 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
           assetType: 'fish', side: 'buy', limitUnitPrice: limitUnitPrice, fishId: fishId, quantity: quantity,
         });
       }
-      if (res && res.ok && res.status === 200) return { ok: true, msg: `${escapeHtml(name || fishId)} 求购 ${quantity} 条 @ ${fmtGold(limitUnitPrice)}` };
-      return { ok: false, msg: `${escapeHtml(name || fishId)} 失败: ${safeErr(res && res.body, res && res.error)}` };
+      if (res && res.ok && res.status === 200) {
+        return {
+          ok: true,
+          orderId: parseMarketOrderIdFromPost(res),
+          msg: `${escapeHtml(name || fishId)} 求购 ${quantity} 条 @ ${fmtGold(limitUnitPrice)}`,
+        };
+      }
+      return { ok: false, orderId: '', msg: `${escapeHtml(name || fishId)} 失败: ${safeErr(res && res.body, res && res.error)}` };
     } catch (e) {
-      return { ok: false, msg: `${escapeHtml(name || fishId)} 异常: ${String(e)}` };
+      return { ok: false, orderId: '', msg: `${escapeHtml(name || fishId)} 异常: ${String(e)}` };
     }
   }
 
@@ -3398,10 +5324,16 @@ saveBargainCache(rarity, sorted, myBuy ? Array.from(myBuy) : null);
           assetType: 'fish', side: 'sell', limitUnitPrice: limitUnitPrice, fishId: fishId, quantity: quantity,
         });
       }
-      if (res && res.ok && res.status === 200) return { ok: true, msg: `${escapeHtml(name || fishId)} 挂单 ${quantity} 条 @ ${fmtGold(limitUnitPrice)}` };
-      return { ok: false, msg: `${escapeHtml(name || fishId)} 失败: ${safeErr(res && res.body, res && res.error)}` };
+      if (res && res.ok && res.status === 200) {
+        return {
+          ok: true,
+          orderId: parseMarketOrderIdFromPost(res),
+          msg: `${escapeHtml(name || fishId)} 挂单 ${quantity} 条 @ ${fmtGold(limitUnitPrice)}`,
+        };
+      }
+      return { ok: false, orderId: '', msg: `${escapeHtml(name || fishId)} 失败: ${safeErr(res && res.body, res && res.error)}` };
     } catch (e) {
-      return { ok: false, msg: `${escapeHtml(name || fishId)} 异常: ${String(e)}` };
+      return { ok: false, orderId: '', msg: `${escapeHtml(name || fishId)} 异常: ${String(e)}` };
     }
   }
 

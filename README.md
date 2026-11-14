@@ -2,7 +2,7 @@
 
 浏览器启动时自动打开 [reelax.cn](https://reelax.cn/)，并向该站点注入可配置的 JS 脚本（等价油猴 `@grant none`，可直接读 `window.arcaneReelax`）。**Chrome/Edge Manifest V3** 版本：后台为单一 Service Worker，`browser.*` 经 `chrome-polyfill.js` 桥接为 `chrome.*`。
 
-> 当前版本 **v2.5.1** · 更新记录见 [`CHANGELOG.md`](./CHANGELOG.md) · 进阶开发与运维说明见 [`SKILL.md`](./SKILL.md) · GitBook 风格使用文档见 [Wiki](https://github.com/Bigbo12138/reelax-script-dev/wiki)
+> 当前版本 **v2.6.0** · 更新记录见 [`CHANGELOG.md`](./CHANGELOG.md) · 进阶开发与运维说明见 [`SKILL.md`](./SKILL.md) · GitBook 风格使用文档见 [Wiki](https://github.com/Bigbo12138/reelax-script-dev/wiki)
 
 下载安装包：[Releases](https://github.com/Bigbo12138/reelax-script-dev/releases)（每次打 `v*` tag 由 GitHub Actions 自动构建 zip）
 
@@ -50,6 +50,7 @@
 
 - **批量挂单**：渔获页按品级、单鱼数量下限、市场最低卖价 ± 金额批量挂单；已有挂单先下架再合并重挂；达活动上限自动停止。
 - **捡漏页签**：按稀有度列出市场最低价鱼（升序）、点击跳转；按地图过滤（仅看所选图）、仅看专精鱼；专精等级本地缓存秒读。
+- **倒鱼页签**：购买单（吃货 / 挂求购+跟价）与卖出单（挂售最低-1 / 跟价）可并行；账本只统计倒鱼插件登记成交的卖鱼收入、买鱼成本、净收入。
 - **价格检测**：一键扫非最低价卖单并下架；扫非最高价求购单并下架；支持**全选**一键勾选重挂，挂单成功项自动取消勾选。
 - **可议价提示**：检测到「我的价已是最优第一名」且市场第一二档断层 `(M1−M2)/M2` 达到**按挂价分档**阈值（`<1k=5%`、`1k~1w=3%`、`1w~10w=2%`、`10w~100w=1.5%`、`100w~1000w=1%`、`>=1000w=0.5%`）时，列入可议价区块，勾选后按建议价一键重挂（卖方向 = M2−1、买方向 = M2+1，重挂后仍保持第一名）。
 - **实时行情采集**：订阅市场 SSE（order-book / listing-created），经 postMessage → 桥转发给外部大屏。
@@ -194,7 +195,7 @@
 | 脚本 | 作用 |
 |---|---|
 | `聚合.js` | **主脚本**：自动切图 + 补满 + 换饵 + 签到 + 公会税率时段 + 优选地图通知 + 页面控制面板 |
-| `一键市场.js` | 批量挂单 / 捡漏 / 价格检测 / 可议价重挂 |
+| `一键市场.js` | 批量挂单 / 捡漏 / 倒鱼（买入·卖出·账本） / 价格检测 / 可议价重挂 |
 | `保底显示.js` | 保底进度浮层；商店 buff 按启用天气购买 |
 | `自动补满次数.js` | 页面侧补杆（与 monitor 协同） |
 | `自动出售库存.js` | 库存页自动出售 |
