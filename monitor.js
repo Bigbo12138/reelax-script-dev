@@ -51,6 +51,7 @@ const MONITOR_DEFAULTS = {
   pityTriggerExotic: false, // 保底触发·奇异：同上，针对奇异；两开关任一在等就保持全运气，最后的那个出了才洗回
   pityTriggerSurgeOnly: false, // 保底触发·仅在奥秘涌流期间触发：开启后保底触发只在涌流(surge)生效时跑，涌流结束自动洗回
   pityTriggerTopBait: false, // 保底触发·自动用顶级饵：开启后洗点期间自动换顶级饵(bait_supreme)，库存为0自动买100个，买不起则用当前设定饵；功能关闭/洗回时恢复开启前饵
+  pityTriggerMapId: '',   // 保底触发·目标地图：达到触发点时先切到该图再洗点；期间冻结自动切图并拒绝跟船；空=不切图
   sacrificeAuto: true,    // 奥术献祭自动贡献：每天 10:01 触发首轮，11:30 探测第二轮开轮时间并自动排定，全服进度达阈值后才自动贡献到参与门槛
   sacrificeServerPct: 60, // 全服进度百分比阈值：超过才自动贡献（progress/target）
   sacrificeRelicPct: 0.5, // 遗物参与门槛百分比（占该轮目标 target 的 %）
@@ -131,6 +132,7 @@ const m = window.__monitorStatus = {
   pityTriggerExotic: MONITOR_DEFAULTS.pityTriggerExotic, // 保底触发·奇异开关
   pityTriggerSurgeOnly: MONITOR_DEFAULTS.pityTriggerSurgeOnly, // 保底触发·仅涌流触发开关
   pityTriggerTopBait: MONITOR_DEFAULTS.pityTriggerTopBait, // 保底触发·自动用顶级饵开关
+  pityTriggerMapId: MONITOR_DEFAULTS.pityTriggerMapId, // 保底触发·目标地图 id（达触发点先切图再洗点；空=不切）
 pityTrigger: {          // 保底触发运行时状态机（见 evaluatePityTrigger）
     active: false,        // 当前处于「洗点全加运气」锁定（等出货）
     pending: false,       // 洗点/洗回/建基 API 进行中（防并发）
@@ -297,6 +299,7 @@ async function monitorLoadConfig() {
     m.pityTriggerExotic = cfg.pityTriggerExotic === true;
     m.pityTriggerSurgeOnly = cfg.pityTriggerSurgeOnly === true;
     m.pityTriggerTopBait = cfg.pityTriggerTopBait === true;
+    m.pityTriggerMapId = typeof cfg.pityTriggerMapId === 'string' ? cfg.pityTriggerMapId : '';
     m.sacrificeAuto = cfg.sacrificeAuto !== false;
     m.sacrificeServerPct = Number(cfg.sacrificeServerPct) >= 0 ? Number(cfg.sacrificeServerPct) : MONITOR_DEFAULTS.sacrificeServerPct;
     m.sacrificeRelicPct = Number(cfg.sacrificeRelicPct) >= 0 ? Number(cfg.sacrificeRelicPct) : MONITOR_DEFAULTS.sacrificeRelicPct;
@@ -1595,6 +1598,8 @@ async function pityTriggerRestore() {
     m.pityTrigger.savedTotalPts = null;
     m.pityTrigger.preBait = null;
     if (ok) { m.pityTrigger.restoredAt = Date.now(); persistStats(); }
+    // 洗回原加点成功 → 解除保底冻结，恢复自动切图
+    if (ok) notifyPityMapHold(false);
     return { ok, plan, useTopBait, baitRestored };
   } catch (e) {
     return { ok: false, reason: String(e) };
@@ -1617,6 +1622,7 @@ function pityTriggerRelease() {
   if (rememberedBait) {
     restoreTopBait(rememberedBait).catch(() => {});
   }
+  notifyPityMapHold(false); // 释放锁定：解除保底冻结，恢复自动切图
 }
 
 // 由 parsePity 调用：推进「保底触发」状态机（基于「奥秘涌流·全运气」硬保底基准 ref）。
@@ -1684,6 +1690,7 @@ async function evaluatePityTrigger(now, opts) {
     } else if (m.compActive && !t.armed.arcane && !t.armed.exotic) {
       // 比赛接管：清 active（由其 respec 负责洗回），我们不再干预
       t.active = false;
+      notifyPityMapHold(false); // 解除保底冻结，交还自动切图
     }
     return;
   }
@@ -1719,7 +1726,20 @@ async function evaluatePityTrigger(now, opts) {
   if (!t.armed.arcane && !t.armed.exotic) return;
 
   t.pending = true;
-  pityTriggerWash().then((r) => {
+  (async () => {
+    // 达到触发点：若配置了目标地图，先冻结自动切图+拒绝跟船并切到该图，再洗点准备触发。
+    const mapId = m.pityTriggerMapId;
+    if (mapId) {
+      const mapName = CURRENT_STATUS_BIOME_CN[mapId] || mapId;
+      console.log(`[monitor] 保底触发: 先切换到目标图 ${mapId}(${mapName}) 再洗点`);
+      sendWebhook(`[Reelax] 🎯 保底触发：先切到目标图 ${mapName}(${mapId})，再洗点全运气`);
+      switchToPityMap(mapId);          // 冻结自动切图 + 下发切图指令
+      await new Promise((r) => setTimeout(r, 4000)); // 留时间让页面完成切图（未完成也继续洗点）
+    } else {
+      notifyPityMapHold(true);         // 未指定地图也冻结自动切图/跟船，避免洗点中被拉走
+    }
+    return pityTriggerWash();
+  })().then((r) => {
     t.pending = false;
     if (r && r.ok) {
       t.active = true;
@@ -1734,8 +1754,10 @@ async function evaluatePityTrigger(now, opts) {
       if (recordRefNow) updateRefFromStats().catch(() => {});
     } else {
       console.warn('[monitor] 保底触发洗点失败:', r && r.reason);
+      // 洗点失败：解除冻结，恢复自动切图（避免卡死在冻结态）
+      notifyPityMapHold(false);
     }
-  }).catch((e) => { t.pending = false; console.warn('[monitor] 保底触发洗点异常:', e); });
+  }).catch((e) => { t.pending = false; console.warn('[monitor] 保底触发洗点异常:', e); notifyPityMapHold(false); });
 }
 
 // ---------- 装备自动出售（API 版，替代 DOM 点击） ----------
@@ -4274,6 +4296,32 @@ function notifyReelaxSwitchBiome(biomeId, biomeName, weatherId, xp, fromBiomeId)
     }).catch(function () { /* 无tab忽略 */ });
   } catch (e) { console.warn('[AutoBoost] 通知聚合切图失败:', e); }
 }
+
+// 保底触发：通知页面聚合.js 冻结自动切图并拒绝跟船（on=true 冻结 / on=false 恢复）。
+// mapId：冻结期间的目标图 id，被船长拉到船图时聚合会切回此图（空=切回最优图）。
+// 经 injector.js 转发到 window.postMessage({__reelaxMapHold, __reelaxMapHoldId})。对所有 reelax 标签页广播。
+function notifyPityMapHold(on, mapId) {
+  try {
+    browser.tabs.query({ url: '*://reelax.cn/*' }).then(function (tabs) {
+      if (!tabs || !tabs.length) return;
+      for (const t of tabs) {
+        browser.tabs.sendMessage(t.id, { type: 'reelax-map-hold', on: !!on, mapId: on ? (mapId || '') : '' })
+          .catch(function () { /* 该tab未注入handler则忽略 */ });
+      }
+    }).catch(function () { /* 无tab忽略 */ });
+  } catch (e) { console.warn('[monitor] 通知聚合冻结切图失败:', e); }
+}
+
+// 保底触发：切换地图。先冻结自动切图（避免切过去又被自动逻辑拉走/跟船），再发切图指令。
+// 返回 true 表示已下发（不保证切图成功，后续洗点前仍有短等待让切图落地）。
+function switchToPityMap(mapId) {
+  if (!mapId) return false;
+  notifyPityMapHold(true, mapId);          // 先冻结自动选图/跟船（带目标图，供被拉走后切回）
+  const name = CURRENT_STATUS_BIOME_CN[mapId] || mapId;
+  notifyReelaxSwitchBiome(mapId, name, null, null, null); // 再显式切到目标图
+  return true;
+}
+
 
 // 自动开增益主入口：data = { type:'preferred', biomeId, biomeName, priorityType, reason, weatherEndsAt }
 // 由聚合.js 在确定「优选地图」时经 injector.js 转发过来；不再自行匹配赛事/天气。

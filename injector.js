@@ -312,5 +312,14 @@ function _forwardSync(text) {
       if (!msg || msg.type !== 'reelax-auto-switch-to' || !msg.biomeId) return;
       try { window.postMessage(Object.assign({ __reelaxSwitchTo: true }, msg), '*'); } catch (_e) {}
     });
-  } catch (e) { console.warn('[Reelax] 注册 reelax-auto-switch-to handler 失败:', e); }
+  } catch (e) { console.warn('[Reelax] 注入 reelax-auto-switch-to handler 失败:', e); }
+
+  // 转发后台「保底触发冻结自动切图/拒绝跟船」指令到页面主世界聚合.js：
+  // monitor.js 经 tabs.sendMessage({type:'reelax-map-hold', on:bool, mapId}) → window.postMessage({__reelaxMapHold:on, __reelaxMapHoldId:mapId})
+  try {
+    window.browser.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== 'reelax-map-hold') return;
+      try { window.postMessage({ __reelaxMapHold: !!msg.on, __reelaxMapHoldId: String(msg.mapId || '') }, '*'); } catch (_e) {}
+    });
+  } catch (e) { console.warn('[Reelax] 注入 reelax-map-hold handler 失败:', e); }
 })();

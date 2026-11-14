@@ -151,6 +151,8 @@
     followBoatFallback: null, // 跟随船 fallback 原因（船过期/船图未解锁），无则 null（仅内存）
     autoSail: true,           // 船长/舵手自动开船总开关（默认开启，船员无效）
     seaAllNavigate: false,    // 四海同航开关（默认关）：开启后自动切图不考虑船所在位置（跳过跟随船，直接按最优图选）
+    pityMapHold: false,       // 保底触发期间「冻结自动切图 + 拒绝跟船」（由 monitor.js 经消息置位，非用户配置，不持久化）
+    pityMapHoldId: '',        // 冻结期间的保底目标地图 id（被船长拉到船图时切回此图；空=切回最优图）
     excludeMasteryInSelect: true, // 优选选图时剔除地图专精点增益（默认开启）
     useNewScoring: true,       // 优选评分算法开关：true=新算法(倍率×天气鱼系数，0.55/0.45)；false=旧算法(编号即金币，0.6/0.4，含雷暴独立优先级)
     useOfficialRoute: false,   // 官方航线开关（默认关）：开启后把官方 routeAssistant.travel() 服务端推荐的目标图纳入选图优先级
@@ -1177,6 +1179,8 @@
 
     // 跟船：在组队船中时不主动换图，保持随船（目标=船的当前地图）
     function pickFollowBoat() {
+      // 保底触发冻结期间：拒绝跟船（不被船长召集拉走）
+      if (state.pityMapHold) return null;
       // 四海同航：开启后自动切图不考虑船所在位置，跳过跟随船逻辑，直接交给后续优先级
       if (state.seaAllNavigate) return null;
       const party = data.party;
@@ -2137,6 +2141,21 @@
     if (d && d.__reelaxSwitchTo && d.biomeId) {
       handleBoostSwitchRequest(d.biomeId);
     }
+    // 保底触发冻结：monitor.js 经 injector 转发 {__reelaxMapHold: 布尔, __reelaxMapHoldId: 目标图id}。
+    // 置位期间冻结自动切图并拒绝跟船；若被船长召集拉到船图，则主动切回目标图。
+    if (d && typeof d.__reelaxMapHold === 'boolean') {
+      const on = d.__reelaxMapHold;
+      const holdId = (typeof d.__reelaxMapHoldId === 'string') ? d.__reelaxMapHoldId : '';
+      const changed = (state.pityMapHold !== on) || (state.pityMapHoldId !== holdId);
+      state.pityMapHold = on;
+      state.pityMapHoldId = on ? holdId : '';
+      if (changed && on) {
+        log('保底触发中：已冻结自动切图并拒绝跟船' + (holdId ? `（被拉走后切回 ${holdId}）` : '（被拉走后切回最优图）'), 'warn');
+      } else if (changed && !on) {
+        log('保底触发结束：恢复自动切图', 'info');
+      }
+      if (changed) updateUI();
+    }
   });
 
   // ==================== 主逻辑 ====================
@@ -2302,13 +2321,12 @@
       await ensureCompetitionCacheFresh();
 
       // 查找最优地图
-      const best = findBestBiome(data);
+      let best = findBestBiome(data);
 
       // [诊断] 记录每次选图决策：来源 / 目标 / 当前图 / 是否真的切换+推送
       console.log('[AutoMap][diag] current=' + currentBiome.id + ' best=' + (best ? (best.biome.id + '/' + best.reason + '/priority=' + best.priorityType + '/followBoat=' + !!best.followBoat + '/sail=' + !!best.sail + '/official=' + !!best.official) : 'NULL') + ' boat=' + ((data.party && data.party.isInParty) ? data.party.boatBiomeId : '单人') + ' mapPriority=' + JSON.stringify(state.mapPriority));
 
-      // 自动切换关闭时：仅巡检不外发。仍已在上方填充 state.biomeDetails（地图列表），
-      // 故这里只需记录最优供展示，不触发任何切图/开增益/换饵/开船/推送等有副作用的动作。
+      // 自动切换关闭：仅巡检不外发。
       if (!state.autoSwitch) {
         state.bestBiomeId = best ? best.biome.id : null;
         state.bestReason = best ? best.reason : '自动切换已关闭（仅巡检）';
@@ -2317,6 +2335,40 @@
         updateUI();
         console.log('[AutoMap] 自动切换关闭，仅巡检更新数据，不切图');
         return;
+      }
+
+      // 保底触发冻结期间（拒绝跟船）：默认仅巡检不切图；但若被船长召集拉到船图，
+      // 或不在保底目标图上，则主动切回：优先切回用户指定目标图，未指定则切回最优图（跳过跟船）。
+      if (state.pityMapHold) {
+        const boatBiomeId = (data.party && data.party.isInParty) ? data.party.boatBiomeId : null;
+        const holdId = state.pityMapHoldId;
+        let desiredId = null;
+        if (holdId) {
+          desiredId = holdId;  // 指定了目标图：不在目标图就切回去（含被拉到船图的情况）
+        } else if (boatBiomeId && currentBiome.id === boatBiomeId && best && best.biome) {
+          desiredId = best.biome.id; // 未指定：被拉到船图则切回最优图
+        }
+        if (desiredId && desiredId !== currentBiome.id && (data.unlockedBiomes || []).some(b => b.id === desiredId)) {
+          const tgt = data.biomes.find(b => b.id === desiredId);
+          best = {
+            biome: tgt,
+            reason: holdId ? '保底触发·切回目标图' : '保底触发·被拉走后切回最优图',
+            priorityType: 'optimal',
+            expBonus: resultOfExperienceBest(tgt, data),
+            followBoat: false,
+            sail: false,
+          };
+          log(`保底触发中：当前在 ${getBiomeName(currentBiome.id)}（船图/非目标图），主动切回 ${getBiomeName(desiredId)}`, 'warn');
+          // 不 return：落到下方正常切图逻辑执行切换
+        } else {
+          state.bestBiomeId = best ? best.biome.id : null;
+          state.bestReason = '保底触发中：已冻结自动切图';
+          state.lastCheckStatus = 'success';
+          updateStatusIndicator('success');
+          updateUI();
+          console.log('[AutoMap] 保底触发冻结中，仅巡检更新数据，不切图');
+          return;
+        }
       }
 
       // 聚合确定目标优选图 → 通知后台给该图开公会增益（仅按选图/切图逻辑触发；后台会检测已有增益防多开）
@@ -4417,7 +4469,6 @@
       updateUI();
     });
 
-    // 优选选图剔除专精增益开关（默认开：选最优图时忽略地图专精点加成）
     document.getElementById('ramp-mastery-select-switch').addEventListener('click', () => {
       state.excludeMasteryInSelect = !state.excludeMasteryInSelect;
       if (state.excludeMasteryInSelect) {

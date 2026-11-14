@@ -55,6 +55,7 @@ const DEFAULTS = {
   pityTriggerExotic: false,
   pityTriggerSurgeOnly: false,
   pityTriggerTopBait: false,
+  pityTriggerMapId: '',
 fishAutoSell: true,
   fishSellRarity: 'uncommon',
   fishSellRarities: ['uncommon'],
@@ -199,6 +200,7 @@ async function load() {
   $('pityTriggerExotic').checked = cfg.pityTriggerExotic === true;
   $('pityTriggerSurgeOnly').checked = cfg.pityTriggerSurgeOnly === true;
   $('pityTriggerTopBait').checked = cfg.pityTriggerTopBait === true;
+  $('pityTriggerMapId').value = cfg.pityTriggerMapId || '';
   $('fishAutoSell').checked = cfg.fishAutoSell !== false;
   const fishRars = (Array.isArray(cfg.fishSellRarities) && cfg.fishSellRarities.length)
     ? cfg.fishSellRarities
@@ -298,6 +300,7 @@ function save() {
     pityTriggerExotic: $('pityTriggerExotic').checked,
     pityTriggerSurgeOnly: $('pityTriggerSurgeOnly').checked,
     pityTriggerTopBait: $('pityTriggerTopBait').checked,
+  pityTriggerMapId: $('pityTriggerMapId').value || '',
     fishAutoSell: $('fishAutoSell').checked,
     fishSellRarities: ['common', 'uncommon', 'fine', 'rare', 'epic'].filter(
       (r) => document.querySelector(`[data-fishsell-${r}]`)?.checked,),

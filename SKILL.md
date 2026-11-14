@@ -323,3 +323,9 @@ python3 api/gear_advisor.py --me-file /tmp/me.json --loadouts-file /tmp/lo.json 
 - 日志收集脚本会持续落盘，改完脚本刷新页面后观察 `/home/ubuntu/Downloads/logs/` 新文件即可确认新逻辑生效。
 - **验证扩展桥**：`python3 devtools/api.py me` 秒回即桥通；`python3 devtools/api.py serve` 可单独起桥排查。
 - **验证 RDP**：`python3 devtools/rdp_query.py eval "location.pathname"` 应显示当前页面路径。
+
+## 5、UI 规范（写界面/文案前先读）
+
+- **避免不必要的辅助标签与说明**。让布局本身发挥解释作用（位置、分组、对齐、留白已表达含义时，不要再加一行文字复述）。
+- **若说明非加不可，则用鼠标提示**（原生 `title` 属性 / hover tooltip），不要常驻可见文案。
+- 推论：短标签优先（如只显示编号而非「编号 + 名称」）；已有 `title` 能承载的信息不要平铺到界面上；用量文案、状态说明尽量收进 `title`。

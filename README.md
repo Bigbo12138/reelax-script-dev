@@ -2,7 +2,7 @@
 
 浏览器启动时自动打开 [reelax.cn](https://reelax.cn/)，并向该站点注入可配置的 JS 脚本（等价油猴 `@grant none`，可直接读 `window.arcaneReelax`）。**Chrome/Edge Manifest V3** 版本：后台为单一 Service Worker，`browser.*` 经 `chrome-polyfill.js` 桥接为 `chrome.*`。
 
-> 当前版本 **v2.6.0** · 更新记录见 [`CHANGELOG.md`](./CHANGELOG.md) · 进阶开发与运维说明见 [`SKILL.md`](./SKILL.md) · GitBook 风格使用文档见 [Wiki](https://github.com/Bigbo12138/reelax-script-dev/wiki)
+> 当前版本 **v2.6.1** · 更新记录见 [`CHANGELOG.md`](./CHANGELOG.md) · 进阶开发与运维说明见 [`SKILL.md`](./SKILL.md) · GitBook 风格使用文档见 [Wiki](https://github.com/Bigbo12138/reelax-script-dev/wiki)
 
 下载安装包：[Releases](https://github.com/Bigbo12138/reelax-script-dev/releases)（每次打 `v*` tag 由 GitHub Actions 自动构建 zip）
 

@@ -4,6 +4,18 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.6.1] - 2026-11-14
+
+### 新功能：保底触发可指定目标地图，期间冻结自动切图并拒绝跟船
+- 选项页新增 **保底触发·目标地图**（`pityTriggerMapId`，`options.html` / `options.js`，可选 `b_001`~`b_017`，默认不切换）。
+- `monitor.js`：达到保底触发点时，若配置了目标地图，先 `switchToPityMap(mapId)` 切到该图并发通知，等待 4 秒后再洗点；未配置地图也会 `notifyPityMapHold(true)` 冻结切图，避免洗点途中被拉走。洗点失败、洗回成功、锁定释放、比赛接管等所有退出路径都会 `notifyPityMapHold(false)` 解除冻结，不会卡在冻结态。
+- `injector.js`：新增 `reelax-map-hold` 消息转发，把后台指令转成 `window.postMessage({__reelaxMapHold, __reelaxMapHoldId})`。
+- `scripts/聚合.js`：新增 `state.pityMapHold` / `state.pityMapHoldId`；`pickFollowBoat()` 冻结期间直接返回 `null`（拒绝跟船）；主循环冻结期间默认仅巡检不切图，但若被船长拉到船图或不在目标图，则主动切回目标图（未指定目标图时切回最优图）。
+
+### 优化：选项页去掉常驻说明，信息收进 `title` 悬停提示
+- `options.html`：删除大量常驻 `<p class="hint">` / `<span class="hint">` 说明段落，说明文字改为对应控件的 `title` 悬停提示；保底触发各开关文案精简为短标签（长解释进 `title`）。
+- `SKILL.md`：新增「UI 规范」章节——避免不必要的辅助标签与说明，让布局本身解释含义；非加不可时用 `title` 悬停提示，不要常驻可见文案。
+
 ## [v2.6.0] - 2026-11-14
 
 ### 新功能：一键市场「倒鱼」页签（买入 / 卖出 / 账本）
