@@ -4,6 +4,14 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.6.2] - 2026-11-14
+
+### 修复：日报把整段正常挂机误记为掉线（「掉线 12h+」）
+- `scripts/日报采集.js`：在线判定原先只依赖 `sync` 心跳 90 秒内活跃。游戏改走 `arcaneReelax` 后 sync 请求近乎消失，`lastActivityAt` 长期不刷新，导致正常挂机被全部计为离线。
+  - 签名请求成功即视为活跃：`/api/fishing/state` 拉取成功后刷新 `dhCache` 时同步更新 `lastActivityAt`；`/api/statistics` 拉取成功后同样更新。
+  - 在线判定改为 `sync 心跳 90s 内` **或** `dhCache 新鲜（< STAT_MS × 1.5 ≈ 450s）` 即算在线。
+  - 移除 `accumulate()` 内重复计算的 `nowH` / `dhFresh`，复用上方统一计算的 `dhFresh`。
+
 ## [v2.6.1] - 2026-11-14
 
 ### 新功能：保底触发可指定目标地图，期间冻结自动切图并拒绝跟船

@@ -158,6 +158,7 @@
     if (casts === null && netGold === null) return;
     dhCache = { casts, netGold };
     dhCacheAt = Date.now();
+    lastActivityAt = dhCacheAt; // 签名请求成功 = 页面活着、登录有效，算活跃
     const d = ensureToday();
     let changed = false;
     if (casts !== null && d.totalCasts !== casts) { d.totalCasts = casts; changed = true; }
@@ -200,6 +201,7 @@
         dwarn('statistics 获取失败:', r && r.error, 'status=', r && r.status);
         return;
       }
+      lastActivityAt = Date.now(); // 签名请求成功 = 页面活着、登录有效，算活跃
       const d = ensureToday();
       // ---- 稀有度基线/出货 ----
       if (Array.isArray(data.rarities)) {
@@ -350,8 +352,12 @@
     const d = ensureToday();
     const now = Date.now();
 
-    // 在线/离线时长：钓鱼页开着则按心跳判定；本地只要有 sync 心跳就算 alive。
-    const alive = (now - lastActivityAt) < 90 * 1000;
+    // dhCache 新鲜（450s 内签名 GET /api/fishing/state 成功）本身就是「页面活着且登录有效」的
+    // 强证据。游戏改走 arcaneReelax 后 sync 请求近乎消失，lastActivityAt 长期不刷新；
+    // 若只按 90s 心跳判在线，会把整段正常挂机误记成掉线（日报「掉线 12h+」的根因）。
+    const dhFresh = dhCache && (now - dhCacheAt) < STAT_MS * 1.5;
+    // 在线/离线时长：sync 心跳 90s 内 或 dhCache 新鲜 → 在线。
+    const alive = (now - lastActivityAt) < 90 * 1000 || dhFresh;
     let delta = Math.round((now - lastTickAt) / 1000);
     if (delta <= 0) delta = 0;
     if (delta > 0 && delta < 600) {
@@ -367,8 +373,6 @@
     // 杆数/金币：优先用最近签名 GET /api/fishing/state 刷新的 dailyHarvest（dhCache，300s 内新鲜，
     // 规避游戏改走 arcaneReelax 后 sync-hook 捕获冻结导致的旧值覆盖）。sync-hook 仅兜底，且
     // dailyHarvest 是当日累计只增不减，故只有在它比 dhCache 更新（更大）时才采用。
-    const nowH = Date.now();
-    const dhFresh = dhCache && (nowH - dhCacheAt) < STAT_MS * 1.5;
     if (dhFresh) {
       if (dhCache.casts != null) d.totalCasts = dhCache.casts;
       if (dhCache.netGold != null) d.dailyNetGold = dhCache.netGold;
