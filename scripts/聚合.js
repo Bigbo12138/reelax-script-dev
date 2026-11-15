@@ -134,7 +134,8 @@
     guildTaxRate: '5',         // 时间段内要设置的税率(百分数，字符串便于输入)
     guildTaxSetDate: null,     // 持久化：当天日期(y-m-d)，记录我们在哪一天把税率设为目标值；用于跨刷新记住“已开启”状态，到点能正常还原
     _guildTaxWindowKey: null,  // 运行时：已处理的时间窗标识，防重复点击（如 '20:00-22:00' + 当天日期）
-    mapPriority: ['official', 'competition', 'followboat', 'optimal'], // 地图优先级(从高到低)：官方航线置顶(不参与选图时不生效) > 赛事 > 跟随船 > 新优选(倍率×天气鱼系数评分)；关闭useNewScoring时官方航线>赛事>跟随船>雷暴>优选(旧编号即金币评分)；可另排入 experience(经验优选)
+    mapPriority: ['official', 'competition', 'followboat', 'optimal', 'specified'], // 地图优先级(从高到低)：官方航线置顶(不参与选图时不生效) > 赛事 > 跟随船 > 新优选(倍率×天气鱼系数评分)；关闭useNewScoring时官方航线>赛事>跟随船>雷暴>优选(旧编号即金币评分)；可另排入 experience(经验优选)/specified(指定地图)
+    specifiedMapId: '',       // 「指定地图」优先级的目标图编号（如 b_005）；空=该优先级不生效
     baitMap: {},              // 鱼饵配置 {priorityType: baitId}，key为'competition'/'tempest'/'optimal'，空=不自动切换
     currentBaitId: null,      // 当前已装备的鱼饵ID
     currentBaitType: null,    // 当前地图所属的优先级类型(用于鱼饵匹配)
@@ -276,6 +277,7 @@
         guildTaxRate: state.guildTaxRate,
         guildTaxSetDate: state.guildTaxSetDate,
         mapPriority: state.mapPriority,
+        specifiedMapId: state.specifiedMapId,
         baitMap: state.baitMap,
         collapsedSections: state.collapsedSections,
         autoSail: state.autoSail,
@@ -309,7 +311,7 @@
       state.guildTaxSetDate = parsed.guildTaxSetDate || null;
       // 迁移旧数据：确保mapPriority包含所有选项（赛事>跟船>雷暴>优选）
       // 【修复】完全尊重用户在 UI 里排定的顺序，不再强制置顶 official/competition/followboat。
-      const allPriorityOptions = ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
+      const allPriorityOptions = ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience', 'specified'];
       if (Array.isArray(parsed.mapPriority)) {
         state.mapPriority = parsed.mapPriority.filter(p => allPriorityOptions.includes(p));
         // 补全缺失的选项(追加到末尾)
@@ -345,12 +347,13 @@
       state.useOfficialRoute = parsed.useOfficialRoute === true; // 默认关（未保存过/历史数据视为关）
       state.expPriorityIncludePartyBonus = parsed.expPriorityIncludePartyBonus !== false;
       state.expGreedyMode = parsed.expGreedyMode === true;
+      state.specifiedMapId = (typeof parsed.specifiedMapId === 'string') ? parsed.specifiedMapId : '';
       // 按当前算法归一化优先级链【修复：保留用户顺序，仅剔除当前算法不允许的类型、补足缺失】：
       // 新算法 -> 允许 赛事/跟船/官方/新优选（剔除 tempest）；旧算法 -> 额外允许 雷暴(tempest)。经验优选(experience)两种算法均可。
       // 不做任何强制置顶——优先级顺序完全以用户在 UI 中排列的为准。
       const fullChain = state.useNewScoring
-        ? ['competition', 'followboat', 'official', 'goldwind', 'optimal', 'experience']
-        : ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
+        ? ['competition', 'followboat', 'official', 'goldwind', 'optimal', 'experience', 'specified']
+        : ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience', 'specified'];
       // 保留用户实际顺序，只去掉当前算法不允许的类型
       state.mapPriority = state.mapPriority.filter(p => fullChain.includes(p));
       // 补足当前算法允许但用户未保留的类型（追加到末尾，不影响已有顺序）
@@ -1463,6 +1466,24 @@
       };
     }
 
+    // 指定地图：用户在优先级面板选定的固定目标图（state.specifiedMapId）。
+    // 未指定/未解锁时返回 null（继续下一优先级）。
+    function pickSpecified() {
+      const id = state.specifiedMapId;
+      if (!id) return null;
+      const target = (data.unlockedBiomes || []).find(b => b.id === id);
+      if (!target) {
+        console.log('[AutoMap] 指定地图未解锁/不可达，跳过:', id);
+        return null;
+      }
+      return {
+        biome: target,
+        reason: '指定地图',
+        priorityType: 'specified',
+        expBonus: calculateExpBonus(target, data),
+      };
+    }
+
     // 官方航线：读 checkAndSwitch 里预取的 routeAssistant.travel() 服务端规划缓存。
     // 服务端返回 targetBiomeId 即官方推荐目标图；图未解锁或 status=no_target 时返回 null（继续下一优先级）。
     function pickOfficialRoute() {
@@ -1502,6 +1523,7 @@
       if (priority === 'competition') return pickCompetition();
       if (priority === 'followboat') return pickFollowBoat();
       if (priority === 'official') return state.useOfficialRoute ? pickOfficialRoute() : null;
+      if (priority === 'specified') return pickSpecified();
       if (priority === 'tempest') return pickByWeather('tempest', 'tempest', '雷暴地图');
       if (priority === 'goldwind') return pickByWeather('gilded_current', 'goldwind', '金风地图');
       if (priority === 'optimal') return pickOptimal();
@@ -3686,6 +3708,31 @@
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        #reelax-auto-map-panel .ramp-priority-main {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+        }
+        #reelax-auto-map-panel .ramp-specified-select {
+          flex: 0 0 auto !important;
+          min-width: 0 !important;
+          height: 20px !important;
+          min-height: 0 !important;
+          max-height: 20px !important;
+          box-sizing: border-box !important;
+          padding: 0 2px !important;
+          margin: 0 !important;
+          font-size: 11px !important;
+          line-height: 20px !important;
+          font-family: inherit;
+          color: rgba(255, 255, 255, 0.85);
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 5px;
+          cursor: pointer;
+        }
+        #reelax-auto-map-panel .ramp-specified-select option { color: #222; background: #fff; }
         #reelax-auto-map-panel .ramp-priority-btns { display: inline-flex; gap: 3px; }
         #reelax-auto-map-panel .ramp-priority-btn {
           width: 22px;
@@ -4485,8 +4532,8 @@
       state.useNewScoring = !state.useNewScoring;
       // 切换算法后按当前算法归一化优先级链（新算法移除 tempest，旧算法加入 tempest）——【修复：保留用户顺序，不重置默认】
       const fullChain = state.useNewScoring
-        ? ['competition', 'followboat', 'official', 'goldwind', 'optimal', 'experience']
-        : ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience'];
+        ? ['competition', 'followboat', 'official', 'goldwind', 'optimal', 'experience', 'specified']
+        : ['competition', 'followboat', 'official', 'tempest', 'goldwind', 'optimal', 'experience', 'specified'];
       state.mapPriority = state.mapPriority.filter(p => fullChain.includes(p));
       for (const p of fullChain) { if (!state.mapPriority.includes(p)) state.mapPriority.push(p); }
       if (state.useNewScoring) {
@@ -5186,12 +5233,16 @@
     competition: '赛事地图',
     followboat: '跟随船',
     official: '官方航线',
+    specified: '指定地图',
     tempest: '雷暴地图',
     optimal: '优选',
     experience: '经验优选',
     goldwind: '金风天气',
     arcane: '奥术涌流天气',
   };
+
+  // 「指定地图」优先级可选的目标图编号（与 options 页保底目标地图同表：b_001~b_017）
+  const SPECIFIED_MAP_IDS = ['b_001','b_002','b_003','b_004','b_005','b_006','b_007','b_008','b_009','b_010','b_011','b_012','b_013','b_014','b_015','b_016','b_017'];
 
   // 按当前算法显示“优选”标签，反映评分口径
   function getOptimalLabel() {
@@ -5211,10 +5262,19 @@
       const canUp = rank > 1;
       const canDown = rank < state.mapPriority.length - (hideFollowBoat ? 1 : 0);
       const label = key === 'optimal' ? getOptimalLabel() : (PRIORITY_LABELS[key] || key);
+      // 「指定地图」行：标签旁带编号下拉框，选中即该优先级的目标图（包一层容器保持三列网格布局）
+      let labelHtml = `<span class="ramp-priority-label">${label}</span>`;
+      if (key === 'specified') {
+        const cur = state.specifiedMapId || '';
+        const opts = ['<option value="">未指定</option>']
+          .concat(SPECIFIED_MAP_IDS.map(id => `<option value="${id}"${id === cur ? ' selected' : ''}>${id}</option>`))
+          .join('');
+        labelHtml = `<div class="ramp-priority-main"><span class="ramp-priority-label">${label}</span><select class="ramp-specified-select" title="该优先级命中的目标地图编号">${opts}</select></div>`;
+      }
       html += `
         <div class="ramp-priority-item" data-priority="${key}">
           <span class="ramp-priority-rank">${rank}</span>
-          <span class="ramp-priority-label">${label}</span>
+          ${labelHtml}
           <div class="ramp-priority-btns">
             <button class="ramp-priority-btn" data-action="up" data-index="${i}" ${canUp ? '' : 'disabled'} title="上移">↑</button>
             <button class="ramp-priority-btn" data-action="down" data-index="${i}" ${canDown ? '' : 'disabled'} title="下移">↓</button>
@@ -5242,6 +5302,16 @@
         state.mapPriority = newPriority;
         saveState();
         renderPriorityList();
+      });
+    });
+    // 「指定地图」下拉框：选编号 → 存 state.specifiedMapId（空=未指定，该优先级跳过）
+    el.querySelectorAll('.ramp-specified-select').forEach(sel => {
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('change', (e) => {
+        e.stopPropagation();
+        state.specifiedMapId = sel.value || '';
+        saveState();
+        log(state.specifiedMapId ? `指定地图优先级目标：${state.specifiedMapId}` : '指定地图优先级：未指定（自动跳过）', 'info');
       });
     });
   }
