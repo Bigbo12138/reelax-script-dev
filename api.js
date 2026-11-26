@@ -102,7 +102,15 @@ const ReelaxApi = (() => {
     const r = await getJSON('/api/player/stats');
     if (!r.ok) return r;
     if (!r.data || !r.data.player) return { ok: false, error: 'no-player' };
-    return { ok: true, player: r.data.player };
+    const player = r.data.player;
+    // 转生「装备百分比」天赋基点是面板乘数的一部分（面板模型必需），
+    // 它挂在 player.reincarnation 下而非 player.stats，这里统一搬运到 stats 上，
+    // 供 monitor 面板模型 statPanelAtInvestment 读取。
+    const rebp = player.reincarnation && player.reincarnation.equipmentPercentageBasisPoints;
+    if (player.stats && rebp && typeof rebp === 'object') {
+      player.stats.reincarnationEquipmentBasisPoints = rebp;
+    }
+    return { ok: true, player };
   }
 
   // 市场订单查询（只读）：卖出侧装备挂单，支持按品级/部位/最高价/品质/强化筛。

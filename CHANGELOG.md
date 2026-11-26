@@ -4,6 +4,20 @@
 
 > 版本递增规则：破坏性修改 → MAJOR+1（高位清零）；向下兼容新功能 → MINOR+1；向下兼容 Bug 修复 → PATCH+1；升高位后低位清零。
 
+## [v2.7.1] - 2026-11-15
+
+### 修复：洗点加点严重超额 / 点数全灌单一属性（面板模型乘数缺失 + 零态百分比失真）
+- `api.js`：`playerStats()` 把转生天赋 `player.reincarnation.equipmentPercentageBasisPoints` 搬运到 `player.stats.reincarnationEquipmentBasisPoints`，供面板模型读取。
+- `monitor.js` `statPanelAtInvestment()`：面板乘数补上转生「装备百分比」基点。此前漏算该分量，模型斜率偏低（1.0995 vs 实际 1.1395），从零态外推约 3.7 万点时面板被低估 ~1495 → 反推 req 虚高 → 洗点后点数全部灌进单一属性。
+- `monitor.js` 天赋平添 T 改为**锚定观测面板反解**：直接二分求 T 使 `floor((currentEligible+T)×multiplier/10000) == stats.total[stat]`。观测面板是服务端真值，锚定后模型在当前点精确，外推才可靠（旧法用 `reincarnation[stat]` 凑 T，字段口径与面板公式有偏差，且会吸收缺失乘数导致系统性漂移）。
+- 新增 `inferStatPercentages(stat, stats)`：从快照反推账号常量（公会 % 与遗物 bp），`inferStatPercentages` 与 `statPanelAtInvestment` 内部逻辑一致。
+- 新增 `patchPostResetStats(preStats, zeroStats)`：零投入态快照里的 `guild` / `artifactPercentage` 是「随投入池缩放的绝对值」，服务端可能未按零池重算（实测公会 8% 被反推成 29% 或 0%）→ 模型严重偏离。改为用**洗前态**反推的百分比常量按零池 eligible 重新合成绝对值覆盖，并透传转生基点。
+- `buildPostResetStats()`：建模时 `base` 保持投入态传入（天赋 T 在投入态锚定观测 total），输出零态 stats 再经 `patchPostResetStats` 校准；此前清零 base 后再建模会让 T 吸收巨大误差，零面板完全失真。
+- `executeCompEnd()` / `pityTriggerRestore()`：零态实读、`fresh` 重读、重置响应体三条来源的洗后 stats **一律**过 `patchPostResetStats`，避免反推出虚高 req 把返还点全灌进优先级末项。
+
+### 修复：`STAT_KEYS` 在声明前被引用（TDZ 风险）
+- `monitor.js` 的 `STAT_KEYS` 原声明在「比赛加点」区块，但 `monitorLoadConfig()`、`reelax-stat-plan` 监听器等更早的代码在模块初始化阶段就会引用它，存在 `Cannot access 'STAT_KEYS' before initialization` 的风险。现移至文件顶部 `MONITOR_DEFAULTS` 之前统一声明，并去掉原重复声明。
+
 ## [v2.7.0] - 2026-11-14
 
 ### 新功能：地图优先级新增「指定地图」项

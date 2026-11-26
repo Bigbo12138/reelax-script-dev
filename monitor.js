@@ -11,6 +11,10 @@
 // 刷新带冷却（reloadCooldownSec），防止掉线死循环反复刷新。
 // 状态挂到 window.__monitorStatus，供 popup 读取展示。
 
+// 属性键：必须在任何函数/监听器引用之前声明（const 存在 TDZ，
+// 早期监听器（monitorLoadConfig、reelax-stat-plan）会先于下方「比赛加点」区块执行）。
+const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
+
 const MONITOR_DEFAULTS = {
   monitorEnabled: true,   // 监控总开关
   offlineCheckMin: 2,     // 掉线阈值（分钟）
@@ -749,22 +753,24 @@ function statPanelAtInvestment(stat, invested, stats, useObservedMinimum) {
       artifactBasisPoints = Math.max(lower, Math.min(Math.ceil(upper / 5) * 5 - 5, artifactBasisPoints));
     }
   }
-  const multiplier = 10_000 + guildPercent * 100 + artifactBasisPoints;
-  const reincarnation = Math.max(0, Number(stats?.reincarnation?.[stat]) || 0);
-  // 天赋贡献 = 两次合并面板取整之差，用二分反推等效平添点。
-  const talentContribution = (flatTalent) =>
-    flatTalent +
-    Math.floor(((currentEligible + flatTalent) * (multiplier - 10_000)) / 10_000) -
-    Math.floor((currentEligible * (multiplier - 10_000)) / 10_000);
-  let low = 0, high = Math.floor(reincarnation);
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-    if (talentContribution(mid) < reincarnation) low = mid + 1;
-    else high = mid;
-  }
-  const talentFlat = low;
-  const modeled = Math.floor(((targetEligible + talentFlat) * multiplier) / 10_000);
+  // 转生「装备百分比」天赋（reincarnation.equipmentPercentageBasisPoints，每级基点）同样
+  // 参与面板乘数——实测 luck 有 +400bp。漏掉它会让模型斜率偏低（1.0995 vs 实际 1.1395），
+  // 从零态外推 3.7 万点时面板被低估 ~1495 → 反推 req 虚高 → 洗点后点数全部灌进单一属性。
+  const reincEquipBasisPoints = Math.max(0, Number(stats?.reincarnationEquipmentBasisPoints?.[stat]) || 0);
+  const multiplier = 10_000 + guildPercent * 100 + artifactBasisPoints + reincEquipBasisPoints;
+  // 天赋平添校准：反解 T 使 floor((currentEligible+T)×multiplier/10000) == 观测面板 total[stat]。
+  // 观测面板是服务端真值——锚定后模型在当前点精确，斜率由 multiplier 决定，外推才可靠。
+  // （旧法用 reincarnation[stat] 贡献字段凑 T，字段口径与面板公式存在偏差，且会把
+  //   缺失的乘数分量吸收进 T，校准点之外系统性漂移。）
   const actual = Number(stats?.total?.[stat]);
+  let tLow = 0, tHigh = Math.max(10_000, Number.isFinite(actual) ? actual : 10_000);
+  while (tLow < tHigh) {
+    const mid = Math.floor((tLow + tHigh) / 2);
+    if (Math.floor(((currentEligible + mid) * multiplier) / 10_000) < actual) tLow = mid + 1;
+    else tHigh = mid;
+  }
+  const talentFlat = tLow;
+  const modeled = Math.floor(((targetEligible + talentFlat) * multiplier) / 10_000);
   return useObservedMinimum && targetInvestment === 0 && currentInvestment === 0 && Number.isFinite(actual) ? actual : modeled;
 }
 
@@ -783,20 +789,74 @@ function requiredStatInvestment(stat, panelTarget, stats) {
   return 0;
 }
 
+// 反推某属性当前快照的「百分比常量」：公会加成 %（整数）与遗物等级基点 bp（5 的倍数）。
+// 与 statPanelAtInvestment 内部反推逻辑一致（这两者是账号常量：公会科技定 %、遗物等级定 bp），
+// 供洗点校准使用——从「有投入态」的可靠快照提取，覆盖零投入态快照上可能失真的绝对值字段。
+function inferStatPercentages(stat, stats) {
+  const systemBase = stat === 'endurance' ? 100 : 0;
+  const currentInvestment = Math.max(0, Math.floor((Number(stats?.base?.[stat]) || 0) - systemBase));
+  const fixed = ['rod', 'gear', 'medals', 'guildTrophies'].reduce(
+    (sum, source) => sum + Math.max(0, Number(stats?.[source]?.[stat]) || 0), 0);
+  const artifactFlat = Math.max(0, Number(stats?.artifacts?.[stat]) || 0);
+  const eligible = systemBase + currentInvestment + fixed + artifactFlat;
+  if (eligible <= 0) return { guildPercent: 0, artifactBasisPoints: 0, eligible: 0 };
+  const guildBonus = Math.max(0, Number(stats?.guild?.[stat]) || 0);
+  const artifactBonus = Math.max(0, Number(stats?.artifactPercentage?.[stat]) || 0);
+  const guildPercent = Math.max(0, Math.round((guildBonus * 100) / eligible));
+  const estimatedArtifact = (artifactBonus * 10_000) / eligible;
+  let artifactBasisPoints = Math.max(0, Math.round(estimatedArtifact / 5) * 5);
+  const guildFloor = Math.floor((eligible * guildPercent) / 100);
+  const lower = Math.max(0, Math.ceil((((guildFloor + artifactBonus) * 10_000) / eligible - guildPercent * 100) / 5) * 5);
+  const upper = (guildFloor + artifactBonus + 1) * 10_000 / eligible - guildPercent * 100;
+  if (lower < upper && Math.floor((eligible * (guildPercent * 100 + lower)) / 10_000) - guildFloor === artifactBonus) {
+    artifactBasisPoints = Math.max(lower, Math.min(Math.ceil(upper / 5) * 5 - 5, artifactBasisPoints));
+  }
+  return { guildPercent, artifactBasisPoints, eligible };
+}
+
+// 洗点校准：零投入态快照（readPostResetStats 实读 / buildPostResetStats 合成）里，
+// guild/artifactPercentage 是「随投入池缩放的绝对值」，服务端可能未按零池正确重算（实测存在失真），
+// 直接用它们反推百分比会严重偏离（如公会 8% 被反推成 29% 或 0%）→ 模型低估/高估面板
+// → 反推 req 虚高把返还点全灌进运气（面板 60000 目标洗成 ~61000+），或不足。
+// 这里用洗前态（preStats，字段可靠加载完整）反推的百分比常量，按零池 eligible 重新合成绝对值覆盖。
+function patchPostResetStats(preStats, zeroStats) {
+  if (!preStats || !zeroStats) return zeroStats;
+  const patched = Object.assign({}, zeroStats);
+  patched.guild = Object.assign({}, zeroStats.guild || {});
+  patched.artifactPercentage = Object.assign({}, zeroStats.artifactPercentage || {});
+  // 转生「装备百分比」基点从洗前快照透传（面板乘数分量，模型必需，见 statPanelAtInvestment）
+  if (preStats.reincarnationEquipmentBasisPoints) {
+    patched.reincarnationEquipmentBasisPoints = preStats.reincarnationEquipmentBasisPoints;
+  }
+  for (const k of STAT_KEYS) {
+    const pre = inferStatPercentages(k, preStats);
+    const z = inferStatPercentages(k, zeroStats);
+    if (pre.eligible <= 0 || z.eligible <= 0) continue;
+    patched.guild[k] = Math.round((z.eligible * pre.guildPercent) / 100);
+    patched.artifactPercentage[k] = Math.floor((z.eligible * pre.artifactBasisPoints) / 10_000);
+  }
+  return patched;
+}
+
 // 构造「洗点后」的完整 stats（base 全归零、total=零投入面板），供面板模型反推洗点后所需投入点。
 // 洗点只清空玩家 base 投入，遗物/公会/竿/装/勋章/转生天赋等加成保留，故其余字段沿用 source。
+// 注意：source 的 guild/artifactPercentage 绝对值是按「洗前高投入池」算的，直接在零池上反推
+// 百分比会虚高（如公会 8%→29%），故先经 patchPostResetStats 按洗前百分比常量校准。
 function buildPostResetStats(source) {
   if (!source) return null;
   const zeroBase = { strength: 0, intelligence: 0, luck: 0, endurance: 0 };
-  const out = Object.assign({}, source, { base: zeroBase });
+  // 零投入面板建模：source.base 保持「投入态」传入——天赋平添 T 在投入态锚定观测 total
+  // （服务端真值），再求 targetInvestment=0 的面板。若把 base 清零后再建模，锚点与观测
+  // 面板错位（零态 eligible 配投入态 total），T 会吸收巨大误差导致零面板完全失真。
   const total = {};
   for (const k of STAT_KEYS) {
-    // 洗点后 currentInvestment=0，statPanelAtInvestment 用 fixed+artifact+talent 建模零投入面板。
-    const v = statPanelAtInvestment(k, 0, Object.assign({}, source, { base: zeroBase }));
+    const v = statPanelAtInvestment(k, 0, source);
     total[k] = Number.isFinite(v) ? v : Math.max(0, (source.total?.[k] || 0) - (source.base?.[k] || 0));
   }
-  out.total = total;
-  return out;
+  // 输出的零态 stats：guild/artifactPercentage 绝对值是按投入池算的，直接留给后续模型反推
+  // 会虚高百分比，用洗前百分比常量 × 零池重合成覆盖（口径同 patchPostResetStats）。
+  const zeroState = Object.assign({}, source, { base: zeroBase, total });
+  return patchPostResetStats(source, zeroState);
 }
 
 // 洗点后读取「零投入态」真实 stats：轮询 playerStats，直到 base 全为 0（或重试耗尽）。
@@ -982,7 +1042,7 @@ async function autoAllocate(unspent) {
 //   · 比赛期间：洗点后全加运气（运气影响爆率/保底）
 //   · 比赛结束：洗点 → 读各属性总点数（postResetTotal）
 //     → 按多级优先级 statPriority 逐项补到 target（总点数口径），剩余点流入下一项
-const STAT_KEYS = ['strength', 'intelligence', 'luck', 'endurance'];
+// （STAT_KEYS 已移至文件顶部声明，见 TDZ 说明）
 const COMP_CHECK_MS = 30000;        // 比赛状态轮询周期
 let compCheckTimer = null;
 let respecInProgress = false;
@@ -1179,6 +1239,9 @@ async function executeCompEnd() {
     // 这是关键：遗物/公会百分比随 base 变化，必须用洗点后的真实 % 建模型反推投入量，
     // 否则用洗点前高 % 会严重低估所需 base → 目标被大幅甩开。
     const zeroState = await readPostResetStats();
+    // ★ 洗点校准：零投入态实读快照的 guild/遗物% 绝对值可能未按零池正确重算（实测有失真），
+    // 用洗前态反推的百分比常量覆盖，避免模型反推 req 虚高 → 返还点被全部灌进优先级末项。
+    if (zeroState && zeroState.stats) zeroState.stats = patchPostResetStats(pre.player.stats, zeroState.stats);
     const fresh = zeroState ? { ok: true, player: null } : await ReelaxApi.playerStats();
     const after = zeroState
       ? { stats: zeroState.stats, unspentStatPoints: zeroState.unspent }
@@ -1199,8 +1262,10 @@ async function executeCompEnd() {
         postResetTotal[k] = Math.max(0, preTotal - preBase);
       }
     }
+    // 无论 stats 来自零态实读、fresh 重读还是重置响应体，一律过校准补丁：
+    // guild/artifactPercentage 绝对值可能未按零池重算，直接用会反推出虚高 req → 点数全灌运气。
     const postStats = (after.stats && after.stats.total)
-      ? after.stats
+      ? patchPostResetStats(pre.player.stats, after.stats)
       : buildPostResetStats(pre.player.stats);
     const plan = computeStatPlan({
       totalPoints: totalPts,
@@ -1561,6 +1626,8 @@ async function pityTriggerRestore() {
     if (!resetR || !resetR.ok) return { ok: false, reason: 'reset-failed' };
     // 洗点后轮询读取零投入态真实 stats（base 全 0、% 已按清零池重算），口径同 executeCompEnd。
     const zeroState = await readPostResetStats();
+    // ★ 洗点校准（口径同 executeCompEnd）：覆盖零投入态快照上可能失真的 guild/遗物% 绝对值。
+    if (zeroState && zeroState.stats) zeroState.stats = patchPostResetStats(pre.player.stats, zeroState.stats);
     const fresh = zeroState ? { ok: true, player: null } : await ReelaxApi.playerStats();
     const player = zeroState
       ? { stats: zeroState.stats, unspentStatPoints: zeroState.unspent }
@@ -1576,8 +1643,9 @@ async function pityTriggerRestore() {
         postResetTotal[k] = Math.max(0, (pre.player.stats?.total?.[k] || 0) - (pre.player.stats?.base?.[k] || 0));
       }
     }
+    // 口径同 executeCompEnd：所有来源的洗后 stats 一律过校准补丁。
     const postStats = (player?.stats && player.stats.total)
-      ? player.stats
+      ? patchPostResetStats(pre.player.stats, player.stats)
       : buildPostResetStats(pre.player.stats);
     const plan = computeStatPlan({
       totalPoints: totalPts,
